@@ -83,7 +83,24 @@ const RO = () => Store.role === 'view'; // lecture seule
 const techById = id => D().techs.find(t => t.id === id);
 const siteById = id => D().sites.find(s => s.id === id);
 const catById = id => (id ? D().categories.find(c => c.id === id) : null);
-const sortedCats = () => [...D().categories].sort((a, b) => cmp(a.name, b.name));
+/** Ordre d'affichage des catégories : ordre choisi (champ order), puis alphabétique. */
+const sortCats = list => [...list].sort((a, b) => (a.order ?? 1e9) - (b.order ?? 1e9) || cmp(a.name, b.name));
+const sortedCats = () => sortCats(D().categories);
+const nextCatOrder = d => d.categories.reduce((m, c) => Math.max(m, c.order ?? -1), -1) + 1;
+function catArrows(c) {
+  const cats = sortedCats(), i = cats.findIndex(x => x.id === c.id);
+  return `<span class="ord"><button type="button" data-act="cat-up" data-id="${c.id}" title="Monter" aria-label="Monter ${esc(c.name)}"${i <= 0 ? ' disabled' : ''}>▲</button>`
+    + `<button type="button" data-act="cat-down" data-id="${c.id}" title="Descendre" aria-label="Descendre ${esc(c.name)}"${i >= cats.length - 1 ? ' disabled' : ''}>▼</button></span>`;
+}
+function moveCat(id, delta) {
+  Store.commit(d => {
+    const list = sortCats(d.categories);
+    const i = list.findIndex(c => c.id === id), k = i + delta;
+    if (i < 0 || k < 0 || k >= list.length) return;
+    [list[i], list[k]] = [list[k], list[i]];
+    list.forEach((c, n) => { c.order = n; });
+  });
+}
 const hasCats = () => D().categories.length > 0;
 /** Le technicien appartient-il à la catégorie filtrée ? ('' = toutes, '__none' = sans catégorie) */
 function techInCat(techId, cat = UI.cat) {
@@ -317,7 +334,7 @@ function renderPlanningMobile() {
     const rows = D().techs.filter(t => t.active !== false && techInCat(t.id)).filter(t => !q || rowText(t).includes(q) || (techIdx.get(t.id + '|' + day) || []).some(j => jobText(j).includes(q)));
     const seq = hasCats() ? groupTechs(rows).flatMap(g => [{ grp: g }, ...g.techs]) : rows.sort((a, b) => cmp(a.name, b.name));
     for (const t of seq) {
-      if (t.grp) { cards += `<h3 class="m-grp" style="--c:${esc(catColor(t.grp.cat))}"><i class="dot"></i>${esc(catName(t.grp.cat))}<small>${t.grp.techs.length}</small></h3>`; continue; }
+      if (t.grp) { cards += `<h3 class="m-grp" style="--c:${esc(catColor(t.grp.cat))}"><i class="dot"></i>${esc(catName(t.grp.cat))}<small>${t.grp.techs.length}</small>${t.grp.cat && !RO() ? catArrows(t.grp.cat) : ''}</h3>`; continue; }
       const list = (techIdx.get(t.id + '|' + day) || []);
       const conflict = hasConflict(list);
       n += list.filter(j => j.kind !== 'absence').length;
@@ -419,7 +436,7 @@ function renderPlanning() {
   const seq = isTech && hasCats() ? groupTechs(rows).flatMap(g => [{ grp: g }, ...g.techs]) : rows;
   for (const r of seq) {
     if (r.grp) {
-      h += `<div class="grp" style="--c:${esc(catColor(r.grp.cat))}"><span><i class="dot"></i>${esc(catName(r.grp.cat))}<small>${r.grp.techs.length}</small></span></div>`;
+      h += `<div class="grp" style="--c:${esc(catColor(r.grp.cat))}"><span><i class="dot"></i>${esc(catName(r.grp.cat))}<small>${r.grp.techs.length}</small>${r.grp.cat && !RO() ? catArrows(r.grp.cat) : ''}</span></div>`;
       continue;
     }
     let load = 0, cells = '';
@@ -497,8 +514,9 @@ function renderResources() {
     <section class="card"><header><h2>Catégories de techniciens<small>${D().categories.length}</small></h2><button class="btn primary sm" data-act="add-cat">+ Ajouter</button></header>
       ${hasCats() ? `<ul class="list">${sortedCats().map(c => {
         const n = D().techs.filter(t => t.categoryId === c.id).length;
-        return `<li data-edit="cat" data-id="${c.id}" style="--c:${esc(c.color)}"><i class="dot"></i><div><b>${esc(c.name)}</b></div><span class="meta">${n} technicien${n > 1 ? 's' : ''}</span></li>`;
-      }).join('')}</ul>` : '<div class="empty-list">Aucune catégorie. Exemples : Électricité, Courants faibles, SSI, Apprentis…</div>'}</section>
+        return `<li data-edit="cat" data-id="${c.id}" style="--c:${esc(c.color)}"><i class="dot"></i><div><b>${esc(c.name)}</b></div><span class="meta">${n} technicien${n > 1 ? 's' : ''}</span>${catArrows(c)}</li>`;
+      }).join('')}</ul>` : '<div class="empty-list">Aucune catégorie. Exemples : Électricité, Courants faibles, SSI, Apprentis…</div>'}
+      ${D().categories.length > 1 ? '<p class="card-hint">▲ ▼ : ordre d\'affichage des catégories dans le planning.</p>' : ''}</section>
     <section class="card data"><header><h2>Données</h2></header><div class="pad">
       <p>${local
         ? '<b>Mode local :</b> le planning est enregistré dans ce navigateur uniquement. Pour le partager avec toute l\'équipe, connectez une base Upstash Redis au projet Vercel (voir README).'
@@ -849,7 +867,7 @@ function openTech(id) {
       if (newCat) v.categoryId = newCatId;
       const newId = uid();
       Store.commit(d => {
-        if (newCat && !d.categories.some(c => c.id === newCatId)) d.categories.push({ id: newCatId, name: newCat, color: nextColor(d, 'categories') });
+        if (newCat && !d.categories.some(c => c.id === newCatId)) d.categories.push({ id: newCatId, name: newCat, color: nextColor(d, 'categories'), order: nextCatOrder(d) });
         const x = ex && d.techs.find(q => q.id === id);
         if (x) Object.assign(x, v); else if (!ex) d.techs.push({ id: newId, ...v });
       });
@@ -902,7 +920,7 @@ function openCat(id) {
       const newId = uid();
       Store.commit(d => {
         const x = ex && d.categories.find(q => q.id === id);
-        if (x) Object.assign(x, v); else if (!ex) d.categories.push({ id: newId, ...v });
+        if (x) Object.assign(x, v); else if (!ex) d.categories.push({ id: newId, ...v, order: nextCatOrder(d) });
       });
       toast(ex ? 'Catégorie modifiée' : 'Catégorie ajoutée');
     },
@@ -1004,7 +1022,7 @@ function exportCSV() {
 function loadDemo() {
   const mon = mondayOf(todayISO()), today = todayISO();
   Store.commit(d => {
-    const C = [['Électricité', '#E73A2C'], ['Courants faibles / SSI', '#61C2CF'], ['Apprentis', '#F2A541']].map(([name, color]) => ({ id: uid(), name, color }));
+    const C = [['Électricité', '#E73A2C'], ['Courants faibles / SSI', '#61C2CF'], ['Apprentis', '#F2A541']].map(([name, color], i) => ({ id: uid(), name, color, order: nextCatOrder(d) + i }));
     const T = [['Lucas Martin', "Chef d'équipe", 0], ['Emma Bernard', 'Électricienne', 0], ['Hugo Petit', 'Électricien', 0], ['Léa Moreau', 'Technicienne CFA', 1], ['Nathan Roux', 'Apprenti', 2]]
       .map(([name, role, c], i) => ({ id: uid(), name, role, categoryId: C[c].id, phone: '06 00 00 00 0' + i, color: PALETTE[(i + 6) % PALETTE.length], active: true }));
     const S = [['Résidence Les Tilleuls', 'Bati Ouest', '12 rue des Tilleuls, 35000 Rennes'], ['Lycée – rénovation électrique', 'Région Bretagne', 'Avenue Georges Graff, 35200 Rennes'],
@@ -1035,6 +1053,8 @@ async function handleAct(act, el) {
     case 'add-tech': return openTech();
     case 'add-site': return openSite();
     case 'add-cat': return openCat();
+    case 'cat-up': return moveCat(el.dataset.id, -1);
+    case 'cat-down': return moveCat(el.dataset.id, 1);
     case 'demo': return loadDemo();
     case 'export-json':
       return download(`planning-chantier_${todayISO()}.json`, JSON.stringify({ app: 'planning-chantier', exportedAt: new Date().toISOString(), ...D() }, null, 2), 'application/json');

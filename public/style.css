@@ -346,3 +346,14 @@ input[type=color]{width:36px;height:28px;border:1px solid var(--line);border-rad
 #cat.on{border-color:var(--ink);font-weight:600}
 .small-note{color:var(--muted);font-size:12.5px}
 @media (max-width:760px){.tb-group.right{flex-wrap:wrap!important}#cat{flex:1 1 120px;min-width:0}#filter{flex:1 1 150px!important}}
+
+/* Ordre des catégories */
+.ord{display:inline-flex;gap:2px;margin-left:6px}
+.ord button{width:26px;height:22px;border:1px solid var(--line);background:#fff;border-radius:5px;font-size:9px;line-height:1;color:var(--muted);cursor:pointer;padding:0}
+.ord button:hover:not(:disabled){border-color:var(--ink);color:var(--ink)}
+.ord button:disabled{opacity:.3;cursor:default}
+.list li .ord{margin-left:4px}
+.m-grp .ord{margin-left:auto}
+.m-grp .ord button{width:34px;height:28px;font-size:11px}
+.card-hint{margin:0;padding:8px 16px 12px;color:var(--muted);font-size:12px}
+@media print{.ord{display:none}}
