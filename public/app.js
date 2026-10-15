@@ -86,6 +86,18 @@ const catById = id => (id ? D().categories.find(c => c.id === id) : null);
 /** Ordre d'affichage des catégories : ordre choisi (champ order), puis alphabétique. */
 const sortCats = list => [...list].sort((a, b) => (a.order ?? 1e9) - (b.order ?? 1e9) || cmp(a.name, b.name));
 const sortedCats = () => sortCats(D().categories);
+const CAT_SORTS = { custom: 'Ordre personnalisé', az: 'A → Z', za: 'Z → A', count: 'Plus de techniciens' };
+/** Catégories dans l'ordre d'affichage choisi dans la barre d'outils. */
+function displayCats() {
+  const list = sortedCats();
+  if (UI.catSort === 'az') return [...list].sort((a, b) => cmp(a.name, b.name));
+  if (UI.catSort === 'za') return [...list].sort((a, b) => cmp(b.name, a.name));
+  if (UI.catSort === 'count') {
+    const n = id => D().techs.filter(t => t.categoryId === id && t.active !== false).length;
+    return [...list].sort((a, b) => n(b.id) - n(a.id) || cmp(a.name, b.name));
+  }
+  return list;
+}
 const nextCatOrder = d => d.categories.reduce((m, c) => Math.max(m, c.order ?? -1), -1) + 1;
 function catArrows(c) {
   const cats = sortedCats(), i = cats.findIndex(x => x.id === c.id);
@@ -110,7 +122,7 @@ function techInCat(techId, cat = UI.cat) {
 }
 /** Regroupe des techniciens par catégorie (ordre alphabétique, « Sans catégorie » à la fin). */
 function groupTechs(techs) {
-  const groups = sortedCats().map(c => ({ cat: c, techs: techs.filter(t => t.categoryId === c.id) }));
+  const groups = displayCats().map(c => ({ cat: c, techs: techs.filter(t => t.categoryId === c.id) }));
   groups.push({ cat: null, techs: techs.filter(t => !catById(t.categoryId)) });
   return groups.filter(g => g.techs.length).map(g => ({ ...g, techs: [...g.techs].sort((a, b) => cmp(a.name, b.name)) }));
 }
@@ -233,8 +245,8 @@ function renderSync() {
 }
 
 /* ---------- État de l'interface ---------- */
-const UI = { view: 'tech', day: todayISO(), start: mondayOf(todayISO()), weeks: 1, weekend: false, filter: '', cat: '', meTech: null, meSpan: 14, dragging: false };
-const UI_SAVED = ['view', 'weeks', 'weekend', 'cat', 'meTech', 'meSpan'];
+const UI = { view: 'tech', day: todayISO(), start: mondayOf(todayISO()), weeks: 1, weekend: false, filter: '', cat: '', catSort: 'custom', meTech: null, meSpan: 14, dragging: false };
+const UI_SAVED = ['view', 'weeks', 'weekend', 'cat', 'catSort', 'meTech', 'meSpan'];
 function saveUI() { lsSet(LS_UI, JSON.stringify(Object.fromEntries(UI_SAVED.map(k => [k, UI[k]])))); }
 
 function visibleDays() {
@@ -258,9 +270,14 @@ function render() {
   if (UI.cat && UI.cat !== '__none' && !catById(UI.cat)) UI.cat = '';
   const cs = $('#cat');
   cs.hidden = !hasCats() || UI.view === 'me' || UI.view === 'res';
-  cs.innerHTML = '<option value="">Toutes catégories</option>' + sortedCats().map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('') + '<option value="__none">Sans catégorie</option>';
+  cs.innerHTML = '<option value="">Toutes catégories</option>' + displayCats().map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('') + '<option value="__none">Sans catégorie</option>';
   cs.value = UI.cat;
   cs.classList.toggle('on', !!UI.cat);
+  if (!CAT_SORTS[UI.catSort]) UI.catSort = 'custom';
+  const so = $('#cat-sort');
+  so.hidden = D().categories.length < 2 || UI.view === 'me' || UI.view === 'res';
+  so.innerHTML = Object.entries(CAT_SORTS).map(([k, v]) => `<option value="${k}">Tri : ${v}</option>`).join('');
+  so.value = UI.catSort;
   $$('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.view === UI.view));
   const planning = UI.view === 'tech' || UI.view === 'site';
   $('#toolbar').hidden = !planning;
@@ -334,7 +351,7 @@ function renderPlanningMobile() {
     const rows = D().techs.filter(t => t.active !== false && techInCat(t.id)).filter(t => !q || rowText(t).includes(q) || (techIdx.get(t.id + '|' + day) || []).some(j => jobText(j).includes(q)));
     const seq = hasCats() ? groupTechs(rows).flatMap(g => [{ grp: g }, ...g.techs]) : rows.sort((a, b) => cmp(a.name, b.name));
     for (const t of seq) {
-      if (t.grp) { cards += `<h3 class="m-grp" style="--c:${esc(catColor(t.grp.cat))}"><i class="dot"></i>${esc(catName(t.grp.cat))}<small>${t.grp.techs.length}</small>${t.grp.cat && !RO() ? catArrows(t.grp.cat) : ''}</h3>`; continue; }
+      if (t.grp) { cards += `<h3 class="m-grp" style="--c:${esc(catColor(t.grp.cat))}"><i class="dot"></i>${esc(catName(t.grp.cat))}<small>${t.grp.techs.length}</small>${t.grp.cat && !RO() && UI.catSort === 'custom' ? catArrows(t.grp.cat) : ''}</h3>`; continue; }
       const list = (techIdx.get(t.id + '|' + day) || []);
       const conflict = hasConflict(list);
       n += list.filter(j => j.kind !== 'absence').length;
@@ -436,7 +453,7 @@ function renderPlanning() {
   const seq = isTech && hasCats() ? groupTechs(rows).flatMap(g => [{ grp: g }, ...g.techs]) : rows;
   for (const r of seq) {
     if (r.grp) {
-      h += `<div class="grp" style="--c:${esc(catColor(r.grp.cat))}"><span><i class="dot"></i>${esc(catName(r.grp.cat))}<small>${r.grp.techs.length}</small>${r.grp.cat && !RO() ? catArrows(r.grp.cat) : ''}</span></div>`;
+      h += `<div class="grp" style="--c:${esc(catColor(r.grp.cat))}"><span><i class="dot"></i>${esc(catName(r.grp.cat))}<small>${r.grp.techs.length}</small>${r.grp.cat && !RO() && UI.catSort === 'custom' ? catArrows(r.grp.cat) : ''}</span></div>`;
       continue;
     }
     let load = 0, cells = '';
@@ -1114,6 +1131,7 @@ function bindEvents() {
   $('#next').onclick = () => shift(1);
   $('#today').onclick = () => { UI.start = mondayOf(todayISO()); UI.day = todayISO(); render(); };
   $('#cat').onchange = e => { UI.cat = e.target.value; render(); };
+  $('#cat-sort').onchange = e => { UI.catSort = e.target.value; render(); };
   $('#weeks').onchange = e => { UI.weeks = +e.target.value; render(); };
   $('#weekend').onchange = e => { UI.weekend = e.target.checked; render(); };
   $('#filter').oninput = e => { UI.filter = e.target.value; render(); };

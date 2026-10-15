@@ -345,7 +345,7 @@ input[type=color]{width:36px;height:28px;border:1px solid var(--line);border-rad
 .pick-all:hover{text-decoration:underline}
 #cat.on{border-color:var(--ink);font-weight:600}
 .small-note{color:var(--muted);font-size:12.5px}
-@media (max-width:760px){.tb-group.right{flex-wrap:wrap!important}#cat{flex:1 1 120px;min-width:0}#filter{flex:1 1 150px!important}}
+@media (max-width:760px){.tb-group.right{flex-wrap:wrap!important}#cat,#cat-sort{flex:1 1 120px;min-width:0}#filter{flex:1 1 150px!important}}
 
 /* Ordre des catégories */
 .ord{display:inline-flex;gap:2px;margin-left:6px}
