@@ -12,7 +12,7 @@ Planning des techniciens sur les chantiers : une application web à déployer su
 - **Détection des conflits** : alerte quand un technicien a deux affectations qui se chevauchent
 - **Glisser-déposer** pour déplacer une intervention (Ctrl + glisser pour la copier)
 - **Jours fériés français** affichés, Pâques et Pentecôte compris
-- **Mon planning** : vue mobile pour chaque technicien, avec le lien GPS vers le chantier, le contact sur site, les collègues présents et les boutons « En cours » / « Terminé ». Le lien direct se partage avec `?tech=…`
+- **Mon planning** : vue mobile pour chaque technicien, avec le contact sur site, les collègues présents et les boutons « En cours » / « Terminé ». Le lien direct se partage avec `?tech=…`
 - **Export CSV** pour Excel, **impression** en A4 paysage, **sauvegarde et import** au format JSON
 - **Synchronisation** entre tous les postes toutes les 15 s. Si deux personnes modifient le planning en même temps, aucune modification n'est perdue.
 
@@ -56,7 +56,7 @@ Le point vert « Partagé · à jour » en haut à droite confirme que le planni
 
 Avec le code `VIEW_PASSWORD`, le technicien peut seulement consulter le planning :
 - il ne voit ni le bouton « + Intervention » ni l'onglet Ressources ;
-- un clic sur une intervention ouvre une fiche de consultation (adresse, contact, tâche, notes) ;
+- un clic sur une intervention ouvre une fiche de consultation (contact, tâche, notes) ;
 - le glisser-déposer et les boutons de statut sont désactivés.
 
 Le serveur refuse aussi toute modification faite avec ce code : la lecture seule ne repose pas seulement sur l'interface.
