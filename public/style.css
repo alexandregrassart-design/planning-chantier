@@ -219,3 +219,18 @@ input[type=color]{width:36px;height:28px;border:1px solid var(--line);border-rad
 .grid.compact .chip .num{margin-right:2px}
 .num-row{grid-template-columns:150px 1fr}
 @media (max-width:480px){.num-row{grid-template-columns:1fr}}
+
+/* Lecture seule */
+.sync.ro i{background:#F2A541}
+.sync.ro,.sync.ok,.sync.error{cursor:pointer}
+.readonly .cell{cursor:default}
+.readonly .cell:hover{background:#fff}
+.readonly .cell.we:hover{background:#F7F4F3}
+.readonly .cell.today:hover{background:#F2FAFB}
+.readonly .cell:empty:hover::after{content:none}
+.readonly .chip,.readonly .rh{cursor:pointer}
+.readonly .rh{cursor:default}
+.readonly .rh:hover{background:#fff}
+.kv{display:grid;grid-template-columns:110px 1fr;gap:10px;font-size:13.5px}
+.kv > span{color:var(--muted);font-size:12px;padding-top:2px}
+.kv a{color:#1f7f8c}

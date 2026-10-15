@@ -1,12 +1,14 @@
 // Fonction serverless Vercel : stockage partagé du planning dans Upstash Redis (API REST).
 // Variables d'environnement (créées automatiquement par l'intégration Upstash du Marketplace Vercel) :
 //   KV_REST_API_URL / KV_REST_API_TOKEN   (ou UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN)
-//   APP_PASSWORD (optionnel, recommandé) : code d'accès demandé aux utilisateurs.
+//   APP_PASSWORD (optionnel, recommandé) : code d'accès en modification (responsables).
+//   VIEW_PASSWORD (optionnel) : code d'accès en lecture seule (techniciens). Nécessite APP_PASSWORD.
 import { timingSafeEqual } from 'node:crypto';
 
 const REDIS_URL = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
 const REDIS_TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
 const PASSWORD = process.env.APP_PASSWORD || '';
+const VIEW_PASSWORD = process.env.VIEW_PASSWORD || '';
 const K_VER = 'planning:version';
 const K_DATA = 'planning:data';
 
@@ -29,11 +31,18 @@ async function redis(command) {
   return j.result;
 }
 
-function authorized(req) {
-  if (!PASSWORD) return true;
-  const given = Buffer.from(String(req.headers['x-app-key'] || ''));
-  const expected = Buffer.from(PASSWORD);
-  return given.length === expected.length && timingSafeEqual(given, expected);
+function same(a, b) {
+  const x = Buffer.from(a), y = Buffer.from(b);
+  return x.length === y.length && timingSafeEqual(x, y);
+}
+
+// Rôle selon le code fourni : 'edit' (modification), 'view' (lecture seule) ou null (refusé).
+function roleOf(req) {
+  if (!PASSWORD) return 'edit';
+  const given = String(req.headers['x-app-key'] || '');
+  if (same(given, PASSWORD)) return 'edit';
+  if (VIEW_PASSWORD && same(given, VIEW_PASSWORD)) return 'view';
+  return null;
 }
 
 async function current() {
@@ -43,19 +52,21 @@ async function current() {
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
-  if (!authorized(req)) return res.status(401).json({ error: 'Code d\'accès invalide' });
+  const role = roleOf(req);
+  if (!role) return res.status(401).json({ error: 'Code d\'accès invalide' });
   if (!REDIS_URL || !REDIS_TOKEN) return res.status(503).json({ error: 'no-storage' });
 
   try {
     if (req.method === 'GET') {
       if (req.query.v !== undefined) {
         const ver = Number((await redis(['GET', K_VER])) || 0);
-        if (ver === Number(req.query.v)) return res.status(200).json({ version: ver, unchanged: true });
+        if (ver === Number(req.query.v)) return res.status(200).json({ version: ver, role, unchanged: true });
       }
-      return res.status(200).json(await current());
+      return res.status(200).json({ ...(await current()), role });
     }
 
     if (req.method === 'PUT') {
+      if (role !== 'edit') return res.status(403).json({ error: 'Accès en lecture seule' });
       const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
       const { baseVersion, data } = body || {};
       if (!Number.isInteger(baseVersion) || !data || !Array.isArray(data.techs) || !Array.isArray(data.sites) || !Array.isArray(data.jobs)) {

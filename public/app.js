@@ -78,6 +78,7 @@ function normalize(d) {
   };
 }
 const D = () => Store.data;
+const RO = () => Store.role === 'view'; // lecture seule
 const techById = id => D().techs.find(t => t.id === id);
 const siteById = id => D().sites.find(s => s.id === id);
 const numTag = s => (s?.number ? `<span class="num">${esc(s.number)}</span>` : '');
@@ -106,7 +107,7 @@ function indexJobs(field) {
 
 /* ---------- Stockage ---------- */
 const Store = {
-  mode: 'local', version: 0, data: normalize(null), status: 'idle', pending: 0, queue: Promise.resolve(),
+  mode: 'local', role: 'edit', version: 0, data: normalize(null), status: 'idle', pending: 0, queue: Promise.resolve(),
 
   headers() {
     const h = { 'Content-Type': 'application/json' };
@@ -121,7 +122,7 @@ const Store = {
       if (r.status === 401) { await askKey(lsGet(LS_KEY) ? 'Code incorrect.' : ''); return this.init(); }
       if (r.ok) {
         const j = await r.json();
-        this.mode = 'remote'; this.version = j.version || 0; this.data = normalize(j.data); this.status = 'ok';
+        this.mode = 'remote'; this.role = j.role || 'edit'; this.version = j.version || 0; this.data = normalize(j.data); this.status = 'ok';
         return;
       }
     } catch { /* pas d'API : mode local */ }
@@ -132,6 +133,7 @@ const Store = {
   /** Applique une modification. En mode partagé, rejoue la modification sur la
    *  dernière version du serveur en cas d'édition concurrente (409). */
   commit(mutator) {
+    if (this.role === 'view') { toast('Accès en lecture seule : modification impossible', 'error'); return Promise.resolve(); }
     this.pending++;
     this.queue = this.queue
       .then(() => this._commit(mutator))
@@ -159,6 +161,7 @@ const Store = {
         continue;
       }
       if (r.status === 401) { await askKey('Code d\'accès requis.'); continue; }
+      if (r.status === 403) { this.role = 'view'; this.version = -1; render(); throw new Error('accès en lecture seule'); }
       throw new Error(j.error || 'HTTP ' + r.status);
     }
     throw new Error('trop de modifications simultanées, réessayez');
@@ -171,6 +174,7 @@ const Store = {
       if (!r.ok) { setSync('error'); return; }
       const j = await r.json();
       if (this.pending) return; // une sauvegarde a démarré entre-temps
+      if (j.role && j.role !== this.role) { this.role = j.role; render(); }
       setSync('ok');
       if (!j.unchanged && j.version !== this.version) { this.version = j.version; this.data = normalize(j.data); render(); }
     } catch { setSync('error'); }
@@ -182,10 +186,13 @@ function renderSync() {
   const el = $('#sync');
   const [cls, txt] = Store.mode === 'local'
     ? ['local', 'Local · ce navigateur']
+    : RO() && Store.status !== 'error' ? ['ro', '🔒 Lecture seule']
     : ({ ok: ['ok', 'Partagé · à jour'], saving: ['saving', 'Enregistrement…'], error: ['error', 'Hors ligne'], idle: ['ok', 'Partagé'] })[Store.status];
   el.className = 'sync ' + cls;
   $('span', el).textContent = txt;
-  el.title = Store.mode === 'local'
+  el.title = RO()
+    ? 'Consultation seule : le planning ne peut pas être modifié. Cliquez pour saisir un autre code d\'accès.'
+    : Store.mode === 'local'
     ? 'Données enregistrées dans ce navigateur uniquement. Connectez une base Upstash Redis sur Vercel pour partager le planning entre tous les postes.'
     : 'Planning partagé : les modifications sont visibles par toute l\'équipe.';
 }
@@ -208,6 +215,10 @@ function visibleDays() {
 /* ---------- Rendu ---------- */
 function render() {
   renderSync();
+  document.body.classList.toggle('readonly', RO());
+  if (RO() && UI.view === 'res') UI.view = 'tech';
+  $('#tabs [data-view="res"]').hidden = RO();
+  $('#add').hidden = RO();
   $$('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.view === UI.view));
   const planning = UI.view === 'tech' || UI.view === 'site';
   $('#toolbar').hidden = !planning;
@@ -220,6 +231,7 @@ function render() {
 }
 
 function emptyState() {
+  if (RO()) return '<div class="empty"><h2>Planning vide</h2><p>Aucune intervention n\'a encore été planifiée.</p></div>';
   return `<div class="empty">
     <h2>Bienvenue sur le planning</h2>
     <p>Commencez par ajouter vos techniciens et vos chantiers, puis cliquez dans une case du planning pour affecter une intervention.</p>
@@ -292,15 +304,15 @@ function renderPlanning() {
       cells += `<div class="cell ${dayCls(d)}${wkStart(d)}${conflict ? ' conflict' : ''}" data-row="${r.id}" data-date="${d}"${conflict ? ' title="Conflit : créneaux qui se chevauchent"' : ''}>${chips}</div>`;
     }
     manDays += load;
-    h += `<div class="rh" data-edit="${isTech ? 'tech' : 'site'}" data-id="${r.id}" style="--c:${esc(r.color)}" title="Modifier">
+    h += `<div class="rh" data-edit="${isTech ? 'tech' : 'site'}" data-id="${r.id}" style="--c:${esc(r.color)}"${RO() ? '' : ' title="Modifier"'}>
       <i class="dot"></i><div><b>${isTech ? '' : numTag(r)}${esc(r.name)}</b><small>${esc((isTech ? r.role : r.client) || '')}</small></div>
       <span class="load" title="Jours planifiés sur la période">${fmtNum(load)} j</span></div>${cells}`;
   }
   h += '</div></div>';
-  if (!rows.length) h += `<div class="empty-list">${q ? 'Aucun résultat pour « ' + esc(UI.filter) + ' ».' : isTech ? 'Aucun technicien actif. <a href="#" data-act="add-tech">Ajouter un technicien</a>' : 'Aucun chantier actif. <a href="#" data-act="add-site">Ajouter un chantier</a>'}</div>`;
+  if (!rows.length) h += `<div class="empty-list">${q ? 'Aucun résultat pour « ' + esc(UI.filter) + ' ».' : isTech ? 'Aucun technicien actif.' + (RO() ? '' : ' <a href="#" data-act="add-tech">Ajouter un technicien</a>') : 'Aucun chantier actif.' + (RO() ? '' : ' <a href="#" data-act="add-site">Ajouter un chantier</a>')}</div>`;
   h += `<div class="sum"><span><b>${nJobs}</b> intervention${nJobs > 1 ? 's' : ''}</span><span><b>${fmtNum(manDays)}</b> jour${manDays > 1 ? 's' : ''}-homme</span>
     ${nConflicts ? `<span class="bad">⚠ ${nConflicts} conflit${nConflicts > 1 ? 's' : ''}</span>` : ''}
-    <span class="hint">Glisser-déposer pour déplacer · Ctrl + glisser pour copier · ← → pour naviguer</span></div>`;
+    <span class="hint">${RO() ? 'Consultation seule · cliquez sur une intervention pour voir le détail' : 'Glisser-déposer pour déplacer · Ctrl + glisser pour copier'} · ← → pour naviguer</span></div>`;
   view.innerHTML = h;
 }
 
@@ -312,7 +324,7 @@ function chipHTML(j, isTech, clash, dim) {
   const tip = [abs ? `${tech?.name || '?'} — ${j.label || 'Absence'}` : `${siteLabel(site) || '?'} — ${tech?.name || '?'}`,
     SLOTS[j.slot], j.task, abs ? '' : STATUS[j.status], j.notes, clash ? '⚠ Conflit pour ce technicien' : ''].filter(Boolean).join('\n');
   const cls = ['chip', abs && 'abs', 'st-' + (j.status || 'prevu'), clash && 'clash', dim && 'dim'].filter(Boolean).join(' ');
-  return `<div class="${cls}" draggable="true" data-job="${j.id}" style="--c:${esc(color)}" title="${esc(tip)}">`
+  return `<div class="${cls}" draggable="${!RO()}" data-job="${j.id}" style="--c:${esc(color)}" title="${esc(tip)}">`
     + `<span class="ct">${j.status === 'fait' && !abs ? '✓ ' : ''}${isTech && !abs ? numTag(site) : ''}${esc(title)}</span>`
     + (j.slot !== 'day' ? `<span class="slot">${SLOT_SHORT[j.slot]}</span>` : '')
     + (j.task ? `<span class="cs">${esc(j.task)}</span>` : '')
@@ -407,11 +419,11 @@ function meCard(j) {
     ${mates.length ? `<p class="small">Avec : ${esc([...new Set(mates)].join(', '))}</p>` : ''}
     ${j.notes ? `<p class="small">${esc(j.notes)}</p>` : ''}
     ${s.notes ? `<p class="small">Chantier : ${esc(s.notes)}</p>` : ''}
-    <div class="acts">
+    ${RO() ? '' : `<div class="acts">
       <button class="btn sm ${st === 'encours' ? 'on' : ''}" data-act="status" data-job="${j.id}" data-status="encours">▶ En cours</button>
       <button class="btn sm ${st === 'fait' ? 'on' : ''}" data-act="status" data-job="${j.id}" data-status="fait">✓ Terminé</button>
       ${st !== 'prevu' ? `<button class="btn sm ghost" data-act="status" data-job="${j.id}" data-status="prevu">Réinitialiser</button>` : ''}
-    </div></article>`;
+    </div>`}</article>`;
 }
 
 /* ---------- Modales ---------- */
@@ -631,6 +643,33 @@ function openJob(id, preset = {}) {
   });
 }
 
+/* --- Consultation d'une intervention (lecture seule) --- */
+function openJobView(id) {
+  const j = D().jobs.find(x => x.id === id);
+  if (!j) return;
+  const t = techById(j.techId), s = siteById(j.siteId), abs = j.kind === 'absence';
+  const maps = s?.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(s.address)}` : '';
+  const mates = abs ? [] : [...new Set(D().jobs.filter(x => x.siteId === j.siteId && x.date === j.date && x.techId !== j.techId && x.kind !== 'absence')
+    .map(x => techById(x.techId)?.name).filter(Boolean))];
+  const row = (k, v) => (v ? `<div class="kv"><span>${k}</span><div>${v}</div></div>` : '');
+  openModal({
+    title: abs ? (j.label || 'Absence') : (s ? siteLabel(s) : 'Chantier supprimé'), cls: 'small',
+    body: [
+      row('Technicien', esc(t?.name)),
+      row('Date', esc(fmtLong(j.date)) + ' · ' + SLOTS[j.slot]),
+      abs ? '' : row('Statut', STATUS[j.status || 'prevu']),
+      abs ? '' : row('Tâche', esc(j.task)),
+      abs ? '' : row('Client', esc(s?.client)),
+      abs ? '' : row('Adresse', s?.address ? `<a href="${maps}" target="_blank" rel="noopener">${esc(s.address)}</a>` : ''),
+      abs ? '' : row('Contact', esc([s?.contact, s?.phone].filter(Boolean).join(' · '))),
+      row('Avec', esc(mates.join(', '))),
+      row('Notes', esc(j.notes)),
+      abs ? '' : row('Infos chantier', esc(s?.notes)),
+    ].join(''),
+    buttons: [{ label: 'Fermer', cls: 'primary' }],
+  });
+}
+
 /* --- Technicien --- */
 function openTech(id) {
   const ex = id ? techById(id) : null;
@@ -780,6 +819,7 @@ function loadDemo() {
 }
 
 async function handleAct(act, el) {
+  if (RO() && act !== 'copy-link') return;
   switch (act) {
     case 'add-tech': return openTech();
     case 'add-site': return openSite();
@@ -828,6 +868,12 @@ function toast(msg, type = '') {
 function shift(n) { UI.start = addDays(UI.start, n * 7 * UI.weeks); render(); }
 
 function bindEvents() {
+  $('#sync').onclick = async () => {
+    if (Store.mode !== 'remote' || !lsGet(LS_KEY)) return;
+    await askKey('');
+    await Store.init();
+    render();
+  };
   $('#tabs').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
     UI.view = b.dataset.view; render();
@@ -859,6 +905,7 @@ function bindEvents() {
   view.addEventListener('click', e => {
     const act = e.target.closest('[data-act]');
     if (act) { e.preventDefault(); handleAct(act.dataset.act, act); return; }
+    if (RO()) { const c = e.target.closest('.chip'); if (c) openJobView(c.dataset.job); return; }
     const chip = e.target.closest('.chip');
     if (chip) { openJob(chip.dataset.job); return; }
     const ed = e.target.closest('[data-edit]');
@@ -875,6 +922,7 @@ function bindEvents() {
   const clearOver = () => $$('.cell.over').forEach(x => x.classList.remove('over'));
   view.addEventListener('dragstart', e => {
     const c = e.target.closest?.('.chip'); if (!c) return;
+    if (RO()) { e.preventDefault(); return; }
     e.dataTransfer.setData('text/plain', c.dataset.job);
     e.dataTransfer.effectAllowed = 'copyMove';
     UI.dragging = true;
@@ -900,7 +948,7 @@ function bindEvents() {
     if (e.key === 'ArrowLeft') shift(-1);
     else if (e.key === 'ArrowRight') shift(1);
     else if (e.key === 't') { UI.start = mondayOf(todayISO()); render(); }
-    else if (e.key === 'n') { e.preventDefault(); openJob(null, {}); }
+    else if (e.key === 'n' && !RO()) { e.preventDefault(); openJob(null, {}); }
   });
 }
 

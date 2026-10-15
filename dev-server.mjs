@@ -8,9 +8,10 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(root, 'public');
-const DB = path.join(root, '.data.local.json');
+const DB = process.env.DATA_FILE || path.join(root, '.data.local.json');
 const PORT = Number(process.env.PORT) || 3000;
 const PASSWORD = process.env.APP_PASSWORD || '';
+const VIEW_PASSWORD = process.env.VIEW_PASSWORD || '';
 const NO_API = process.argv.includes('--no-api');
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml', '.json': 'application/json', '.ico': 'image/x-icon' };
 
@@ -22,14 +23,17 @@ http.createServer(async (req, res) => {
 
   if (url.pathname === '/api/data') {
     if (NO_API) return send(res, 503, { error: 'no-storage' });
-    if (PASSWORD && req.headers['x-app-key'] !== PASSWORD) return send(res, 401, { error: 'Code d\'accès invalide' });
+    const key = req.headers['x-app-key'] || '';
+    const role = !PASSWORD || key === PASSWORD ? 'edit' : VIEW_PASSWORD && key === VIEW_PASSWORD ? 'view' : null;
+    if (!role) return send(res, 401, { error: 'Code d\'accès invalide' });
     const db = await load();
     if (req.method === 'GET') {
       const v = url.searchParams.get('v');
-      if (v !== null && Number(v) === db.version) return send(res, 200, { version: db.version, unchanged: true });
-      return send(res, 200, db);
+      if (v !== null && Number(v) === db.version) return send(res, 200, { version: db.version, role, unchanged: true });
+      return send(res, 200, { ...db, role });
     }
     if (req.method === 'PUT') {
+      if (role !== 'edit') return send(res, 403, { error: 'Accès en lecture seule' });
       let body = '';
       for await (const chunk of req) body += chunk;
       let j;

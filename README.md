@@ -44,10 +44,22 @@ Lancez cette commande depuis le dossier `planning-chantier`.
 
 1. Dans le projet Vercel, ouvrez **Storage → Create Database → Upstash for Redis**. L'offre gratuite suffit.
 2. Connectez la base au projet. Vercel ajoute alors automatiquement les variables `KV_REST_API_URL` et `KV_REST_API_TOKEN`.
-3. Ajoutez un code d'accès, fortement recommandé : allez dans **Settings → Environment Variables** et créez `APP_PASSWORD` avec le code de votre choix.
+3. Dans **Settings → Environment Variables**, créez les codes d'accès :
+   - `APP_PASSWORD` : le code **responsable**, qui permet de tout modifier (fortement recommandé) ;
+   - `VIEW_PASSWORD` : le code **technicien**, qui permet seulement de **consulter** le planning (facultatif, fonctionne seulement si `APP_PASSWORD` est défini).
 4. **Redéployez** le projet (onglet Deployments → ⋯ → Redeploy).
 
 Le point vert « Partagé · à jour » en haut à droite confirme que le planning est commun à toute l'équipe. Le code d'accès n'est demandé qu'une fois par appareil.
+
+### Accès technicien en lecture seule
+
+Avec le code `VIEW_PASSWORD`, le technicien peut seulement consulter le planning :
+- il ne voit ni le bouton « + Intervention » ni l'onglet Ressources ;
+- un clic sur une intervention ouvre une fiche de consultation (adresse, contact, tâche, notes) ;
+- le glisser-déposer et les boutons de statut sont désactivés.
+
+Le serveur refuse aussi toute modification faite avec ce code : la lecture seule ne repose pas seulement sur l'interface.
+Le badge « 🔒 Lecture seule » s'affiche en haut à droite. Un clic dessus permet de saisir un autre code, par exemple le code responsable sur le poste d'un chef d'équipe.
 
 > Vous aviez déjà saisi des données en mode local ? Exportez-les avant de brancher la base (Ressources → *Exporter une sauvegarde*), puis réimportez-les ensuite.
 
