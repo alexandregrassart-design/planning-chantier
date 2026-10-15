@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Planning Chantier</title>
+<meta name="description" content="Planning des techniciens sur les chantiers">
+<meta name="theme-color" content="#1C1313">
+<link rel="icon" href="logo-sygmatel.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <span class="logo-plate"><img src="logo-sygmatel.png" alt="Sygmatel"></span>
+    <div><strong>Planning Chantier</strong><span>Techniciens</span></div>
+  </div>
+  <nav class="tabs" id="tabs">
+    <button data-view="tech">Par technicien</button>
+    <button data-view="site">Par chantier</button>
+    <button data-view="me">Mon planning</button>
+    <button data-view="res">Ressources</button>
+  </nav>
+  <div class="sync" id="sync"><i></i><span></span></div>
+</header>
+
+<section class="toolbar" id="toolbar">
+  <div class="tb-group">
+    <button class="btn icon" id="prev" title="Période précédente (←)">‹</button>
+    <button class="btn" id="today">Aujourd'hui</button>
+    <button class="btn icon" id="next" title="Période suivante (→)">›</button>
+  </div>
+  <div class="range" id="range"></div>
+  <div class="tb-group right">
+    <select id="weeks" title="Durée affichée">
+      <option value="1">1 semaine</option>
+      <option value="2">2 semaines</option>
+      <option value="4">4 semaines</option>
+    </select>
+    <label class="chk"><input type="checkbox" id="weekend"> Week-end</label>
+    <input type="search" id="filter" placeholder="Filtrer…" aria-label="Filtrer">
+    <button class="btn ghost" id="csv" title="Exporter la période en CSV (Excel)">CSV</button>
+    <button class="btn ghost" id="print">Imprimer</button>
+    <button class="btn primary" id="add">+ Intervention</button>
+  </div>
+</section>
+
+<main id="view"></main>
+
+<input type="file" id="import-file" accept="application/json,.json" hidden>
+<div id="modal-root"></div>
+<div id="toasts"></div>
+<script src="app.js"></script>
+</body>
+</html>
