@@ -72,6 +72,7 @@ function normalize(d) {
   d = d && typeof d === 'object' ? d : {};
   const arr = x => (Array.isArray(x) ? x.filter(o => o && typeof o === 'object' && o.id) : []);
   return {
+    categories: arr(d.categories),
     techs: arr(d.techs),
     sites: arr(d.sites),
     jobs: arr(d.jobs).filter(j => isISODate(j.date)).map(j => ({ slot: 'day', status: 'prevu', kind: 'site', ...j })),
@@ -81,6 +82,23 @@ const D = () => Store.data;
 const RO = () => Store.role === 'view'; // lecture seule
 const techById = id => D().techs.find(t => t.id === id);
 const siteById = id => D().sites.find(s => s.id === id);
+const catById = id => (id ? D().categories.find(c => c.id === id) : null);
+const sortedCats = () => [...D().categories].sort((a, b) => cmp(a.name, b.name));
+const hasCats = () => D().categories.length > 0;
+/** Le technicien appartient-il à la catégorie filtrée ? ('' = toutes, '__none' = sans catégorie) */
+function techInCat(techId, cat = UI.cat) {
+  if (!cat) return true;
+  const t = techById(techId);
+  return cat === '__none' ? !catById(t?.categoryId) : t?.categoryId === cat;
+}
+/** Regroupe des techniciens par catégorie (ordre alphabétique, « Sans catégorie » à la fin). */
+function groupTechs(techs) {
+  const groups = sortedCats().map(c => ({ cat: c, techs: techs.filter(t => t.categoryId === c.id) }));
+  groups.push({ cat: null, techs: techs.filter(t => !catById(t.categoryId)) });
+  return groups.filter(g => g.techs.length).map(g => ({ ...g, techs: [...g.techs].sort((a, b) => cmp(a.name, b.name)) }));
+}
+const catName = c => (c ? c.name : 'Sans catégorie');
+const catColor = c => (c ? c.color : '#9AA0A6');
 const numTag = s => (s?.number ? `<span class="num">${esc(s.number)}</span>` : '');
 const siteLabel = s => (s ? (s.number ? s.number + ' · ' : '') + s.name : '');
 const overlaps = (a, b) => a === 'day' || b === 'day' || a === b;
@@ -198,8 +216,8 @@ function renderSync() {
 }
 
 /* ---------- État de l'interface ---------- */
-const UI = { view: 'tech', day: todayISO(), start: mondayOf(todayISO()), weeks: 1, weekend: false, filter: '', meTech: null, meSpan: 14, dragging: false };
-const UI_SAVED = ['view', 'weeks', 'weekend', 'meTech', 'meSpan'];
+const UI = { view: 'tech', day: todayISO(), start: mondayOf(todayISO()), weeks: 1, weekend: false, filter: '', cat: '', meTech: null, meSpan: 14, dragging: false };
+const UI_SAVED = ['view', 'weeks', 'weekend', 'cat', 'meTech', 'meSpan'];
 function saveUI() { lsSet(LS_UI, JSON.stringify(Object.fromEntries(UI_SAVED.map(k => [k, UI[k]])))); }
 
 function visibleDays() {
@@ -220,6 +238,12 @@ function render() {
   $('#tabs [data-view="res"]').hidden = RO();
   $('#add').hidden = RO();
   $('#fab').hidden = RO() || UI.view === 'res';
+  if (UI.cat && UI.cat !== '__none' && !catById(UI.cat)) UI.cat = '';
+  const cs = $('#cat');
+  cs.hidden = !hasCats() || UI.view === 'me' || UI.view === 'res';
+  cs.innerHTML = '<option value="">Toutes catégories</option>' + sortedCats().map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('') + '<option value="__none">Sans catégorie</option>';
+  cs.value = UI.cat;
+  cs.classList.toggle('on', !!UI.cat);
   $$('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.view === UI.view));
   const planning = UI.view === 'tech' || UI.view === 'site';
   $('#toolbar').hidden = !planning;
@@ -290,10 +314,11 @@ function renderPlanningMobile() {
 
   let cards = '', n = 0;
   if (isTech) {
-    let rows = D().techs.filter(t => t.active !== false).sort((a, b) => cmp(a.name, b.name));
-    for (const t of rows) {
+    const rows = D().techs.filter(t => t.active !== false && techInCat(t.id)).filter(t => !q || rowText(t).includes(q) || (techIdx.get(t.id + '|' + day) || []).some(j => jobText(j).includes(q)));
+    const seq = hasCats() ? groupTechs(rows).flatMap(g => [{ grp: g }, ...g.techs]) : rows.sort((a, b) => cmp(a.name, b.name));
+    for (const t of seq) {
+      if (t.grp) { cards += `<h3 class="m-grp" style="--c:${esc(catColor(t.grp.cat))}"><i class="dot"></i>${esc(catName(t.grp.cat))}<small>${t.grp.techs.length}</small></h3>`; continue; }
       const list = (techIdx.get(t.id + '|' + day) || []);
-      if (q && !rowText(t).includes(q) && !list.some(j => jobText(j).includes(q))) continue;
       const conflict = hasConflict(list);
       n += list.filter(j => j.kind !== 'absence').length;
       cards += `<section class="m-card${conflict ? ' conflict' : ''}" style="--c:${esc(t.color)}">
@@ -308,7 +333,7 @@ function renderPlanningMobile() {
     }
   } else {
     const bySite = new Map();
-    for (const j of dayJobs) if (j.kind !== 'absence') { if (!bySite.has(j.siteId)) bySite.set(j.siteId, []); bySite.get(j.siteId).push(j); }
+    for (const j of dayJobs) if (j.kind !== 'absence' && techInCat(j.techId)) { if (!bySite.has(j.siteId)) bySite.set(j.siteId, []); bySite.get(j.siteId).push(j); }
     const sites = [...bySite.keys()].map(id => siteById(id) || { id, name: 'Chantier supprimé', color: '#999' }).sort((a, b) => cmp(a.name, b.name));
     for (const s of sites) {
       const list = bySite.get(s.id).sort(bySlot);
@@ -323,7 +348,7 @@ function renderPlanningMobile() {
           return item(j, esc(t?.name || 'Technicien supprimé') + (clash ? ' <span class="m-warn">⚠</span>' : ''), t?.color || '#999', j.task);
         }).join('')}</section>`;
     }
-    const absents = dayJobs.filter(j => j.kind === 'absence').map(j => `${techById(j.techId)?.name || '?'} (${j.label || 'absent'})`);
+    const absents = dayJobs.filter(j => j.kind === 'absence' && techInCat(j.techId)).map(j => `${techById(j.techId)?.name || '?'} (${j.label || 'absent'})`);
     if (absents.length) cards += `<p class="m-abs">Absents : ${esc(absents.join(', '))}</p>`;
   }
 
@@ -358,7 +383,7 @@ function renderPlanning() {
   const idx = isTech ? techIdx : indexJobs('siteId');
   const inRange = j => j.date >= first && j.date <= last;
   let rows;
-  if (isTech) rows = D().techs.filter(t => t.active !== false).sort((a, b) => cmp(a.name, b.name));
+  if (isTech) rows = D().techs.filter(t => t.active !== false && techInCat(t.id)).sort((a, b) => cmp(a.name, b.name));
   else {
     const used = new Set(D().jobs.filter(j => j.kind !== 'absence' && inRange(j)).map(j => j.siteId));
     rows = D().sites.filter(s => s.status !== 'termine' || used.has(s.id)).sort((a, b) => cmp(a.name, b.name));
@@ -391,11 +416,16 @@ function renderPlanning() {
   }
 
   let nJobs = 0, manDays = 0, nConflicts = 0;
-  for (const r of rows) {
+  const seq = isTech && hasCats() ? groupTechs(rows).flatMap(g => [{ grp: g }, ...g.techs]) : rows;
+  for (const r of seq) {
+    if (r.grp) {
+      h += `<div class="grp" style="--c:${esc(catColor(r.grp.cat))}"><span><i class="dot"></i>${esc(catName(r.grp.cat))}<small>${r.grp.techs.length}</small></span></div>`;
+      continue;
+    }
     let load = 0, cells = '';
     for (const d of days) {
       const all = idx.get(r.id + '|' + d) || [];
-      const list = isTech ? all : all.filter(j => j.kind !== 'absence');
+      const list = isTech ? all : all.filter(j => j.kind !== 'absence' && techInCat(j.techId));
       const conflict = isTech && hasConflict(list);
       if (conflict) nConflicts++;
       for (const j of list) if (j.kind !== 'absence') { load += j.slot === 'day' ? 1 : 0.5; nJobs++; }
@@ -459,9 +489,16 @@ function renderResources() {
   const local = Store.mode === 'local';
   $('#view').innerHTML = `<div class="res">
     <section class="card"><header><h2>Techniciens<small>${techs.length}</small></h2><button class="btn primary sm" data-act="add-tech">+ Ajouter</button></header>
-      ${techs.length ? `<ul class="list">${techs.map(techLi).join('')}</ul>` : '<div class="empty-list">Aucun technicien.</div>'}</section>
+      ${!techs.length ? '<div class="empty-list">Aucun technicien.</div>'
+        : hasCats() ? `<ul class="list">${groupTechs(techs).map(g => `<li class="li-grp" style="--c:${esc(catColor(g.cat))}"><i class="dot"></i>${esc(catName(g.cat))}<small>${g.techs.length}</small></li>${[...g.techs].sort((a, b) => (a.active === false) - (b.active === false) || cmp(a.name, b.name)).map(techLi).join('')}`).join('')}</ul>`
+        : `<ul class="list">${techs.map(techLi).join('')}</ul>`}</section>
     <section class="card"><header><h2>Chantiers<small>${sites.length}</small></h2><button class="btn primary sm" data-act="add-site">+ Ajouter</button></header>
       ${sites.length ? `<ul class="list">${sites.map(siteLi).join('')}</ul>` : '<div class="empty-list">Aucun chantier.</div>'}</section>
+    <section class="card"><header><h2>Catégories de techniciens<small>${D().categories.length}</small></h2><button class="btn primary sm" data-act="add-cat">+ Ajouter</button></header>
+      ${hasCats() ? `<ul class="list">${sortedCats().map(c => {
+        const n = D().techs.filter(t => t.categoryId === c.id).length;
+        return `<li data-edit="cat" data-id="${c.id}" style="--c:${esc(c.color)}"><i class="dot"></i><div><b>${esc(c.name)}</b></div><span class="meta">${n} technicien${n > 1 ? 's' : ''}</span></li>`;
+      }).join('')}</ul>` : '<div class="empty-list">Aucune catégorie. Exemples : Électricité, Courants faibles, SSI, Apprentis…</div>'}</section>
     <section class="card data"><header><h2>Données</h2></header><div class="pad">
       <p>${local
         ? '<b>Mode local :</b> le planning est enregistré dans ce navigateur uniquement. Pour le partager avec toute l\'équipe, connectez une base Upstash Redis au projet Vercel (voir README).'
@@ -497,7 +534,7 @@ function renderMe() {
 
   $('#view').innerHTML = `<div class="me">
     <div class="me-head">
-      <select id="me-tech" aria-label="Technicien">${techs.map(t => `<option value="${t.id}" ${t.id === tech.id ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select>
+      <select id="me-tech" aria-label="Technicien">${(() => { const opt = t => `<option value="${t.id}" ${t.id === tech.id ? 'selected' : ''}>${esc(t.name)}</option>`; return hasCats() ? groupTechs(techs).map(g => `<optgroup label="${esc(catName(g.cat))}">${g.techs.map(opt).join('')}</optgroup>`).join('') : techs.map(opt).join(''); })()}</select>
       <select id="me-span" aria-label="Période">${[7, 14, 30].map(n => `<option value="${n}" ${n === UI.meSpan ? 'selected' : ''}>${n} jours</option>`).join('')}</select>
       <button class="btn" data-act="copy-link" title="Lien direct vers le planning de ce technicien">Copier le lien</button>
     </div>${body}</div>`;
@@ -601,6 +638,14 @@ function bindColor(form) {
 const val = (f, id) => $('#' + id, f)?.value.trim() ?? '';
 
 /* --- Intervention --- */
+function pickHTML(techs, sel) {
+  if (!techs.length) return '<em>Aucun technicien : ajoutez-en dans Ressources.</em>';
+  const lab = t => `<label class="pk" style="--c:${esc(t.color)}"><input type="checkbox" value="${t.id}" ${sel.has(t.id) ? 'checked' : ''}><span>${esc(t.name)}</span></label>`;
+  if (!hasCats()) return techs.map(lab).join('');
+  return groupTechs(techs).map(g => `<div class="pick-grp"><button type="button" class="pick-all" style="--c:${esc(catColor(g.cat))}" title="Tout sélectionner / désélectionner">${esc(catName(g.cat))}</button>
+    <div class="pick">${g.techs.map(lab).join('')}</div></div>`).join('');
+}
+
 function openJob(id, preset = {}) {
   const existing = id ? D().jobs.find(j => j.id === id) : null;
   if (id && !existing) return;
@@ -617,7 +662,7 @@ function openJob(id, preset = {}) {
     <div class="seg" id="f-kind"><button type="button" data-k="site">Chantier</button><button type="button" data-k="absence">Absence</button></div>
     <div class="field"><label>${isNew ? 'Technicien(s)' : 'Technicien'}</label>
       ${isNew
-        ? `<div class="pick" id="f-techs">${techs.map(t => `<label class="pk" style="--c:${esc(t.color)}"><input type="checkbox" value="${t.id}" ${sel.has(t.id) ? 'checked' : ''}><span>${esc(t.name)}</span></label>`).join('') || '<em>Aucun technicien : ajoutez-en dans Ressources.</em>'}</div>`
+        ? `<div class="pick" id="f-techs">${pickHTML(techs, sel)}</div>`
         : `<select id="f-tech">${techs.map(t => `<option value="${t.id}" ${t.id === j.techId ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select>`}
     </div>
     <div class="field only-site"><label for="f-site">Chantier</label>
@@ -724,6 +769,13 @@ function openJob(id, preset = {}) {
         $$('#f-kind button', f).forEach(b => b.classList.toggle('on', b.dataset.k === k));
         showConflicts(f);
       };
+      $('#f-techs', f)?.addEventListener('click', e => {
+        const b = e.target.closest('.pick-all'); if (!b) return;
+        const boxes = $$('input', b.parentElement);
+        const all = boxes.every(x => x.checked);
+        boxes.forEach(x => { x.checked = !all; });
+        showConflicts(f);
+      });
       $('#f-kind', f).addEventListener('click', e => { const b = e.target.closest('button'); if (b) setKind(b.dataset.k); });
       $('#f-site', f).addEventListener('change', () => {
         const n = $('#f-newsite', f);
@@ -776,7 +828,8 @@ function openJobView(id) {
 /* --- Technicien --- */
 function openTech(id) {
   const ex = id ? techById(id) : null;
-  const t = ex ? { ...ex } : { name: '', role: '', phone: '', color: nextColor(D(), 'techs'), active: true };
+  const t = ex ? { ...ex } : { name: '', role: '', phone: '', categoryId: UI.cat && UI.cat !== '__none' ? UI.cat : '', color: nextColor(D(), 'techs'), active: true };
+  const newCatId = uid();
   const buttons = [];
   if (ex) buttons.push({
     label: 'Supprimer', cls: 'danger', action: async () => {
@@ -788,10 +841,15 @@ function openTech(id) {
   });
   buttons.push({ label: 'Annuler', cls: 'ghost' }, {
     label: ex ? 'Enregistrer' : 'Ajouter', cls: 'primary', submit: true, action: f => {
-      const v = { name: val(f, 'f-name'), role: val(f, 'f-role'), phone: val(f, 'f-phone'), color: $('#f-color', f).value, active: $('#f-active', f).checked };
-      if (!v.name) { const w = $('#f-warn', f); w.hidden = false; w.textContent = 'Le nom est obligatoire.'; return false; }
+      const v = { name: val(f, 'f-name'), role: val(f, 'f-role'), phone: val(f, 'f-phone'), categoryId: val(f, 'f-cat'), color: $('#f-color', f).value, active: $('#f-active', f).checked };
+      const newCat = v.categoryId === '__new' ? val(f, 'f-newcat') : '';
+      const warn = msg => { const w = $('#f-warn', f); w.hidden = false; w.textContent = msg; return false; };
+      if (!v.name) return warn('Le nom est obligatoire.');
+      if (v.categoryId === '__new' && !newCat) return warn('Donnez un nom à la nouvelle catégorie.');
+      if (newCat) v.categoryId = newCatId;
       const newId = uid();
       Store.commit(d => {
+        if (newCat && !d.categories.some(c => c.id === newCatId)) d.categories.push({ id: newCatId, name: newCat, color: nextColor(d, 'categories') });
         const x = ex && d.techs.find(q => q.id === id);
         if (x) Object.assign(x, v); else if (!ex) d.techs.push({ id: newId, ...v });
       });
@@ -802,9 +860,58 @@ function openTech(id) {
     title: ex ? 'Technicien' : 'Nouveau technicien', cls: 'small', buttons,
     body: `<div class="field"><label for="f-name">Nom</label><input type="text" id="f-name" value="${esc(t.name)}" placeholder="Prénom Nom" autofocus></div>
       <div class="field"><label for="f-role">Fonction</label><input type="text" id="f-role" value="${esc(t.role)}" placeholder="ex. Électricien, Chef d'équipe…"></div>
+      <div class="field"><label for="f-cat">Catégorie</label>
+        <select id="f-cat"><option value="">— Sans catégorie —</option>${sortedCats().map(c => `<option value="${c.id}" ${c.id === t.categoryId ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}<option value="__new">+ Nouvelle catégorie…</option></select>
+        <input type="text" id="f-newcat" placeholder="Nom de la catégorie (ex. Courants faibles)" hidden></div>
       <div class="field"><label for="f-phone">Téléphone</label><input type="tel" id="f-phone" value="${esc(t.phone)}"></div>
       <div class="field"><label>Couleur</label>${colorField(t.color)}</div>
       <label class="chk"><input type="checkbox" id="f-active" ${t.active !== false ? 'checked' : ''}> Actif (affiché dans le planning)</label>
+      <div class="warn err" id="f-warn" hidden></div>`,
+    onMount: f => {
+      bindColor(f);
+      $('#f-cat', f).addEventListener('change', () => {
+        const n = $('#f-newcat', f);
+        n.hidden = $('#f-cat', f).value !== '__new';
+        if (!n.hidden) n.focus();
+      });
+    },
+  });
+}
+
+/* --- Catégorie de techniciens --- */
+function openCat(id) {
+  const ex = catById(id);
+  const c = ex ? { ...ex } : { name: '', color: nextColor(D(), 'categories') };
+  const members = ex ? D().techs.filter(t => t.categoryId === id) : [];
+  const buttons = [];
+  if (ex) buttons.push({
+    label: 'Supprimer', cls: 'danger', action: async () => {
+      if (!(await confirmBox(`Supprimer la catégorie <b>${esc(c.name)}</b> ?${members.length ? `<br>Ses ${members.length} technicien(s) passeront « Sans catégorie » (ils ne sont pas supprimés).` : ''}`, 'Supprimer'))) return false;
+      Store.commit(d => {
+        d.categories = d.categories.filter(x => x.id !== id);
+        d.techs.forEach(t => { if (t.categoryId === id) t.categoryId = ''; });
+      });
+      if (UI.cat === id) UI.cat = '';
+      toast('Catégorie supprimée');
+    },
+  });
+  buttons.push({ label: 'Annuler', cls: 'ghost' }, {
+    label: ex ? 'Enregistrer' : 'Ajouter', cls: 'primary', submit: true, action: f => {
+      const v = { name: val(f, 'f-name'), color: $('#f-color', f).value };
+      if (!v.name) { const w = $('#f-warn', f); w.hidden = false; w.textContent = 'Le nom est obligatoire.'; return false; }
+      const newId = uid();
+      Store.commit(d => {
+        const x = ex && d.categories.find(q => q.id === id);
+        if (x) Object.assign(x, v); else if (!ex) d.categories.push({ id: newId, ...v });
+      });
+      toast(ex ? 'Catégorie modifiée' : 'Catégorie ajoutée');
+    },
+  });
+  openModal({
+    title: ex ? 'Catégorie' : 'Nouvelle catégorie', cls: 'small', buttons,
+    body: `<div class="field"><label for="f-name">Nom</label><input type="text" id="f-name" value="${esc(c.name)}" placeholder="ex. Électricité, Courants faibles, SSI…" autofocus></div>
+      <div class="field"><label>Couleur</label>${colorField(c.color)}</div>
+      ${members.length ? `<p class="small-note">Techniciens : ${esc(members.map(t => t.name).sort(cmp).join(', '))}</p>` : ''}
       <div class="warn err" id="f-warn" hidden></div>`,
     onMount: bindColor,
   });
@@ -881,12 +988,12 @@ function download(name, content, type) {
 
 function exportCSV() {
   const days = new Set(visibleDays());
-  const rows = [['Date', 'Jour', 'Technicien', 'Type', 'N° chantier', 'Chantier / Motif', 'Client', 'Adresse', 'Créneau', 'Tâche', 'Statut', 'Notes']];
-  D().jobs.filter(j => days.has(j.date))
+  const rows = [['Date', 'Jour', 'Technicien', 'Catégorie', 'Type', 'N° chantier', 'Chantier / Motif', 'Client', 'Adresse', 'Créneau', 'Tâche', 'Statut', 'Notes']];
+  D().jobs.filter(j => days.has(j.date) && techInCat(j.techId))
     .sort((a, b) => a.date.localeCompare(b.date) || cmp(techById(a.techId)?.name, techById(b.techId)?.name) || bySlot(a, b))
     .forEach(j => {
       const s = siteById(j.siteId) || {}, abs = j.kind === 'absence';
-      rows.push([fmt(j.date, { day: '2-digit', month: '2-digit', year: 'numeric' }), DAY_SHORT[dow(j.date)], techById(j.techId)?.name || '',
+      rows.push([fmt(j.date, { day: '2-digit', month: '2-digit', year: 'numeric' }), DAY_SHORT[dow(j.date)], techById(j.techId)?.name || '', catById(techById(j.techId)?.categoryId)?.name || '',
         abs ? 'Absence' : 'Chantier', abs ? '' : s.number || '', abs ? j.label : s.name, abs ? '' : s.client, abs ? '' : s.address, SLOTS[j.slot], j.task || '', abs ? '' : STATUS[j.status], j.notes || '']);
     });
   const csv = '﻿' + rows.map(r => r.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(';')).join('\r\n');
@@ -897,8 +1004,9 @@ function exportCSV() {
 function loadDemo() {
   const mon = mondayOf(todayISO()), today = todayISO();
   Store.commit(d => {
-    const T = [['Lucas Martin', "Chef d'équipe"], ['Emma Bernard', 'Électricienne'], ['Hugo Petit', 'Électricien'], ['Léa Moreau', 'Technicienne CFA'], ['Nathan Roux', 'Apprenti']]
-      .map(([name, role], i) => ({ id: uid(), name, role, phone: '06 00 00 00 0' + i, color: PALETTE[(i + 6) % PALETTE.length], active: true }));
+    const C = [['Électricité', '#E73A2C'], ['Courants faibles / SSI', '#61C2CF'], ['Apprentis', '#F2A541']].map(([name, color]) => ({ id: uid(), name, color }));
+    const T = [['Lucas Martin', "Chef d'équipe", 0], ['Emma Bernard', 'Électricienne', 0], ['Hugo Petit', 'Électricien', 0], ['Léa Moreau', 'Technicienne CFA', 1], ['Nathan Roux', 'Apprenti', 2]]
+      .map(([name, role, c], i) => ({ id: uid(), name, role, categoryId: C[c].id, phone: '06 00 00 00 0' + i, color: PALETTE[(i + 6) % PALETTE.length], active: true }));
     const S = [['Résidence Les Tilleuls', 'Bati Ouest', '12 rue des Tilleuls, 35000 Rennes'], ['Lycée – rénovation électrique', 'Région Bretagne', 'Avenue Georges Graff, 35200 Rennes'],
       ['Entrepôt logistique ZA Nord', 'LogiBreizh', 'ZA Nord, 35760 Saint-Grégoire'], ['Clinique – mise à niveau SSI', 'Clinique Saint-Laurent', 'Rennes'], ['Bureaux – câblage VDI', 'Immo Cesson', '35510 Cesson-Sévigné']]
       .map(([name, client, address], i) => ({ id: uid(), number: `2026-${String(101 + i * 7)}`, name, client, address, contact: '', phone: '', notes: '', color: PALETTE[i], status: 'actif' }));
@@ -916,7 +1024,7 @@ function loadDemo() {
       if (w === 1 && k === 4) d.jobs.push({ id: uid(), kind: 'absence', techId: T[2].id, siteId: null, label: 'Congés', date: addDays(mon, day), slot: 'day', status: 'prevu', task: '', notes: '' });
       else add(2, k < 3 ? 2 : 1, day, 'day', 'Pose chemins de câbles');
     }
-    d.techs.push(...T); d.sites.push(...S);
+    d.categories.push(...C); d.techs.push(...T); d.sites.push(...S);
   });
   toast('Données d\'exemple ajoutées');
 }
@@ -926,13 +1034,14 @@ async function handleAct(act, el) {
   switch (act) {
     case 'add-tech': return openTech();
     case 'add-site': return openSite();
+    case 'add-cat': return openCat();
     case 'demo': return loadDemo();
     case 'export-json':
       return download(`planning-chantier_${todayISO()}.json`, JSON.stringify({ app: 'planning-chantier', exportedAt: new Date().toISOString(), ...D() }, null, 2), 'application/json');
     case 'import-json': return $('#import-file').click();
     case 'reset':
       if (await confirmBox('Effacer <b>tous</b> les techniciens, chantiers et interventions ?<br>Pensez à exporter une sauvegarde avant.', 'Tout effacer')) {
-        Store.commit(d => { d.techs = []; d.sites = []; d.jobs = []; });
+        Store.commit(d => { d.categories = []; d.techs = []; d.sites = []; d.jobs = []; });
         toast('Planning vidé');
       }
       return;
@@ -984,6 +1093,7 @@ function bindEvents() {
   $('#prev').onclick = () => shift(-1);
   $('#next').onclick = () => shift(1);
   $('#today').onclick = () => { UI.start = mondayOf(todayISO()); UI.day = todayISO(); render(); };
+  $('#cat').onchange = e => { UI.cat = e.target.value; render(); };
   $('#weeks').onchange = e => { UI.weeks = +e.target.value; render(); };
   $('#weekend').onchange = e => { UI.weekend = e.target.checked; render(); };
   $('#filter').oninput = e => { UI.filter = e.target.value; render(); };
@@ -1000,8 +1110,8 @@ function bindEvents() {
       const raw = JSON.parse(await file.text());
       if (!Array.isArray(raw.techs) || !Array.isArray(raw.sites) || !Array.isArray(raw.jobs)) throw new Error('format non reconnu');
       const x = normalize(raw);
-      if (!(await confirmBox(`Remplacer le planning actuel par cette sauvegarde ?<br><b>${x.techs.length}</b> techniciens · <b>${x.sites.length}</b> chantiers · <b>${x.jobs.length}</b> interventions`, 'Importer'))) return;
-      Store.commit(d => { d.techs = x.techs; d.sites = x.sites; d.jobs = x.jobs; });
+      if (!(await confirmBox(`Remplacer le planning actuel par cette sauvegarde ?<br><b>${x.categories.length}</b> catégories · <b>${x.techs.length}</b> techniciens · <b>${x.sites.length}</b> chantiers · <b>${x.jobs.length}</b> interventions`, 'Importer'))) return;
+      Store.commit(d => { d.categories = x.categories; d.techs = x.techs; d.sites = x.sites; d.jobs = x.jobs; });
       toast('Sauvegarde importée');
     } catch (err) { toast('Import impossible : ' + err.message, 'error'); }
   };
@@ -1018,7 +1128,7 @@ function bindEvents() {
     const chip = e.target.closest('.chip, .m-job');
     if (chip) { openJob(chip.dataset.job); return; }
     const ed = e.target.closest('[data-edit]');
-    if (ed) { (ed.dataset.edit === 'tech' ? openTech : openSite)(ed.dataset.id); return; }
+    if (ed) { ({ tech: openTech, site: openSite, cat: openCat })[ed.dataset.edit](ed.dataset.id); return; }
     const cell = e.target.closest('.cell');
     if (cell) openJob(null, UI.view === 'tech' ? { techIds: [cell.dataset.row], date: cell.dataset.date } : { siteId: cell.dataset.row, date: cell.dataset.date });
   });

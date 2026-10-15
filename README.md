@@ -8,6 +8,7 @@ Planning des techniciens sur les chantiers : une application web à déployer su
 - **Interventions** à la journée, le matin ou l'après-midi, avec une tâche, un statut (prévu / en cours / terminé) et des notes
 - **Création en lot** : plusieurs techniciens sur une période en une seule fois, en sautant les week-ends et les jours fériés
 - **Absences** : congés, RTT, formation, maladie
+- **Catégories de techniciens** (Électricité, Courants faibles, SSI, Apprentis…) : le planning est regroupé par catégorie, un menu permet de n'afficher qu'une équipe, et un clic sur le nom d'une catégorie dans le formulaire d'intervention sélectionne toute l'équipe d'un coup
 - **Détection des conflits** : alerte quand un technicien a deux affectations qui se chevauchent
 - **Glisser-déposer** pour déplacer une intervention (Ctrl + glisser pour la copier)
 - **Jours fériés français** affichés, Pâques et Pentecôte compris
