@@ -198,7 +198,7 @@ function renderSync() {
 }
 
 /* ---------- État de l'interface ---------- */
-const UI = { view: 'tech', start: mondayOf(todayISO()), weeks: 1, weekend: false, filter: '', meTech: null, meSpan: 14, dragging: false };
+const UI = { view: 'tech', day: todayISO(), start: mondayOf(todayISO()), weeks: 1, weekend: false, filter: '', meTech: null, meSpan: 14, dragging: false };
 const UI_SAVED = ['view', 'weeks', 'weekend', 'meTech', 'meSpan'];
 function saveUI() { lsSet(LS_UI, JSON.stringify(Object.fromEntries(UI_SAVED.map(k => [k, UI[k]])))); }
 
@@ -219,12 +219,13 @@ function render() {
   if (RO() && UI.view === 'res') UI.view = 'tech';
   $('#tabs [data-view="res"]').hidden = RO();
   $('#add').hidden = RO();
+  $('#fab').hidden = RO() || UI.view === 'res';
   $$('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.view === UI.view));
   const planning = UI.view === 'tech' || UI.view === 'site';
   $('#toolbar').hidden = !planning;
   $('#weeks').value = String(UI.weeks);
   $('#weekend').checked = UI.weekend;
-  if (planning) renderPlanning();
+  if (planning) (isMobile() ? renderPlanningMobile : renderPlanning)();
   else if (UI.view === 'me') renderMe();
   else renderResources();
   saveUI();
@@ -240,6 +241,108 @@ function emptyState() {
       <button class="btn" data-act="add-site">+ Chantier</button>
       <button class="btn ghost" data-act="demo">Charger un exemple</button>
     </div></div>`;
+}
+
+/* ---------- Vue téléphone : un jour à la fois ---------- */
+const MQ = window.matchMedia('(max-width: 760px)');
+const isMobile = () => MQ.matches;
+
+function mobileDays() {
+  const out = [];
+  for (let i = 0; i < 7; i++) {
+    const d = addDays(UI.start, i);
+    if (!UI.weekend && dow(d) >= 5) continue;
+    out.push(d);
+  }
+  return out;
+}
+
+function renderPlanningMobile() {
+  const view = $('#view');
+  const isTech = UI.view === 'tech';
+  const days = mobileDays();
+  const today = todayISO();
+  if (!days.includes(UI.day)) UI.day = days.includes(today) ? today : days[0];
+  const day = UI.day;
+  $('#range').innerHTML = `<b>S${isoWeek(days[0])}</b>${esc(fmt(days[0], { day: 'numeric', month: 'short' }))} – ${esc(fmt(days[days.length - 1], { day: 'numeric', month: 'short' }))}`;
+
+  if (!D().techs.length && !D().sites.length) { view.innerHTML = emptyState(); return; }
+
+  const techIdx = indexJobs('techId');
+  const q = UI.filter.trim().toLowerCase();
+  const jobText = j => [j.task, j.notes, j.label, siteById(j.siteId)?.name, siteById(j.siteId)?.number, siteById(j.siteId)?.client, techById(j.techId)?.name].join(' ').toLowerCase();
+  const rowText = r => [r.name, r.number, r.role, r.client, r.address].join(' ').toLowerCase();
+  const dayJobs = D().jobs.filter(j => j.date === day);
+  const countFor = d => D().jobs.filter(j => j.date === d && j.kind !== 'absence').length;
+
+  let h = `<div class="m-days">${days.map(d => `<button type="button" class="m-day${d === day ? ' on' : ''}${d === today ? ' today' : ''}${holidayName(d) ? ' hol' : ''}" data-day="${d}">
+      <span>${DAY_SHORT[dow(d)]}</span><b>${+d.slice(8)}</b><i${countFor(d) ? ' class="has"' : ''}></i></button>`).join('')}</div>`;
+  const hol = holidayName(day);
+  h += `<h2 class="m-title">${esc(fmtLong(day))}${hol ? ` <span class="hn">${esc(hol)}</span>` : ''}</h2>`;
+
+  const item = (j, label, color, sub) => {
+    const st = j.status || 'prevu', abs = j.kind === 'absence';
+    return `<button type="button" class="m-job st-${st}${abs ? ' abs' : ''}" data-job="${j.id}" style="--c:${esc(color)}">
+      <span class="m-slot">${SLOTS[j.slot]}</span>
+      <span class="m-main"><b>${label}</b>${sub ? `<small>${esc(sub)}</small>` : ''}</span>
+      ${abs ? '' : `<span class="badge ${st}">${STATUS[st]}</span>`}</button>`;
+  };
+
+  let cards = '', n = 0;
+  if (isTech) {
+    let rows = D().techs.filter(t => t.active !== false).sort((a, b) => cmp(a.name, b.name));
+    for (const t of rows) {
+      const list = (techIdx.get(t.id + '|' + day) || []);
+      if (q && !rowText(t).includes(q) && !list.some(j => jobText(j).includes(q))) continue;
+      const conflict = hasConflict(list);
+      n += list.filter(j => j.kind !== 'absence').length;
+      cards += `<section class="m-card${conflict ? ' conflict' : ''}" style="--c:${esc(t.color)}">
+        <header><i class="dot"></i><div><b>${esc(t.name)}</b><small>${esc(t.role || '')}</small></div>
+          ${conflict ? '<span class="m-warn">⚠ Conflit</span>' : ''}
+          ${RO() ? '' : `<button type="button" class="m-add" data-add="${t.id}" aria-label="Ajouter une intervention pour ${esc(t.name)}">+</button>`}</header>
+        ${list.length ? list.map(j => {
+          if (j.kind === 'absence') return item(j, esc(j.label || 'Absence'), '#9AA0A6', j.notes);
+          const s = siteById(j.siteId);
+          return item(j, numTag(s) + esc(s?.name || 'Chantier supprimé'), s?.color || '#999', j.task);
+        }).join('') : '<div class="m-free">Libre</div>'}</section>`;
+    }
+  } else {
+    const bySite = new Map();
+    for (const j of dayJobs) if (j.kind !== 'absence') { if (!bySite.has(j.siteId)) bySite.set(j.siteId, []); bySite.get(j.siteId).push(j); }
+    const sites = [...bySite.keys()].map(id => siteById(id) || { id, name: 'Chantier supprimé', color: '#999' }).sort((a, b) => cmp(a.name, b.name));
+    for (const s of sites) {
+      const list = bySite.get(s.id).sort(bySlot);
+      if (q && !rowText(s).includes(q) && !list.some(j => jobText(j).includes(q))) continue;
+      n += list.length;
+      cards += `<section class="m-card" style="--c:${esc(s.color)}">
+        <header><i class="dot"></i><div><b>${numTag(s)}${esc(s.name)}</b><small>${esc([s.client, s.address].filter(Boolean).join(' · '))}</small></div>
+          ${RO() ? '' : `<button type="button" class="m-add" data-add="${s.id}" aria-label="Ajouter un technicien sur ${esc(s.name)}">+</button>`}</header>
+        ${list.map(j => {
+          const t = techById(j.techId);
+          const clash = hasConflict(techIdx.get(j.techId + '|' + j.date) || []);
+          return item(j, esc(t?.name || 'Technicien supprimé') + (clash ? ' <span class="m-warn">⚠</span>' : ''), t?.color || '#999', j.task);
+        }).join('')}</section>`;
+    }
+    const absents = dayJobs.filter(j => j.kind === 'absence').map(j => `${techById(j.techId)?.name || '?'} (${j.label || 'absent'})`);
+    if (absents.length) cards += `<p class="m-abs">Absents : ${esc(absents.join(', '))}</p>`;
+  }
+
+  if (!cards) cards = `<div class="empty-list">${q ? 'Aucun résultat pour « ' + esc(UI.filter) + ' ».' : isTech ? 'Aucun technicien actif.' : 'Aucun chantier ce jour-là.'}</div>`;
+  h += `<div class="m-list">${cards}</div>`;
+  h += `<div class="sum"><span><b>${n}</b> intervention${n > 1 ? 's' : ''} ce jour</span></div>`;
+  view.innerHTML = h;
+}
+
+function shiftDay(n) {
+  const days = mobileDays();
+  const i = days.indexOf(UI.day) + n;
+  if (i >= 0 && i < days.length) UI.day = days[i];
+  else {
+    UI.start = addDays(UI.start, n > 0 ? 7 : -7);
+    const nd = mobileDays();
+    UI.day = n > 0 ? nd[0] : nd[nd.length - 1];
+  }
+  render();
 }
 
 function renderPlanning() {
@@ -865,7 +968,7 @@ function toast(msg, type = '') {
 }
 
 /* ---------- Événements ---------- */
-function shift(n) { UI.start = addDays(UI.start, n * 7 * UI.weeks); render(); }
+function shift(n) { UI.start = addDays(UI.start, n * 7 * (isMobile() ? 1 : UI.weeks)); render(); }
 
 function bindEvents() {
   $('#sync').onclick = async () => {
@@ -880,13 +983,15 @@ function bindEvents() {
   });
   $('#prev').onclick = () => shift(-1);
   $('#next').onclick = () => shift(1);
-  $('#today').onclick = () => { UI.start = mondayOf(todayISO()); render(); };
+  $('#today').onclick = () => { UI.start = mondayOf(todayISO()); UI.day = todayISO(); render(); };
   $('#weeks').onchange = e => { UI.weeks = +e.target.value; render(); };
   $('#weekend').onchange = e => { UI.weekend = e.target.checked; render(); };
-  $('#filter').oninput = e => { UI.filter = e.target.value; renderPlanning(); };
+  $('#filter').oninput = e => { UI.filter = e.target.value; render(); };
   $('#csv').onclick = exportCSV;
   $('#print').onclick = () => window.print();
   $('#add').onclick = () => openJob(null, {});
+  $('#fab').onclick = () => openJob(null, isMobile() && (UI.view === 'tech' || UI.view === 'site') ? { date: UI.day } : {});
+  MQ.addEventListener('change', render);
 
   $('#import-file').onchange = async e => {
     const file = e.target.files[0]; e.target.value = '';
@@ -905,14 +1010,26 @@ function bindEvents() {
   view.addEventListener('click', e => {
     const act = e.target.closest('[data-act]');
     if (act) { e.preventDefault(); handleAct(act.dataset.act, act); return; }
-    if (RO()) { const c = e.target.closest('.chip'); if (c) openJobView(c.dataset.job); return; }
-    const chip = e.target.closest('.chip');
+    const dayBtn = e.target.closest('[data-day]');
+    if (dayBtn) { UI.day = dayBtn.dataset.day; render(); return; }
+    const addBtn = e.target.closest('[data-add]');
+    if (addBtn && !RO()) { openJob(null, UI.view === 'tech' ? { techIds: [addBtn.dataset.add], date: UI.day } : { siteId: addBtn.dataset.add, date: UI.day }); return; }
+    if (RO()) { const c = e.target.closest('.chip, .m-job'); if (c) openJobView(c.dataset.job); return; }
+    const chip = e.target.closest('.chip, .m-job');
     if (chip) { openJob(chip.dataset.job); return; }
     const ed = e.target.closest('[data-edit]');
     if (ed) { (ed.dataset.edit === 'tech' ? openTech : openSite)(ed.dataset.id); return; }
     const cell = e.target.closest('.cell');
     if (cell) openJob(null, UI.view === 'tech' ? { techIds: [cell.dataset.row], date: cell.dataset.date } : { siteId: cell.dataset.row, date: cell.dataset.date });
   });
+  let touch = null;
+  view.addEventListener('touchstart', e => { touch = e.touches.length === 1 ? { x: e.touches[0].clientX, y: e.touches[0].clientY } : null; }, { passive: true });
+  view.addEventListener('touchend', e => {
+    if (!touch || !isMobile() || (UI.view !== 'tech' && UI.view !== 'site')) return;
+    const dx = e.changedTouches[0].clientX - touch.x, dy = e.changedTouches[0].clientY - touch.y;
+    touch = null;
+    if (Math.abs(dx) > 70 && Math.abs(dy) < 50 && !e.target.closest('.m-days')) shiftDay(dx < 0 ? 1 : -1);
+  }, { passive: true });
   view.addEventListener('change', e => {
     if (e.target.id === 'me-tech') { UI.meTech = e.target.value; render(); }
     if (e.target.id === 'me-span') { UI.meSpan = +e.target.value; render(); }
