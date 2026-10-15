@@ -1,0 +1,13 @@
+{
+  "name": "planning-chantier",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Planning de chantier pour les techniciens (Vercel + Upstash Redis)",
+  "type": "module",
+  "scripts": {
+    "dev": "node dev-server.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
