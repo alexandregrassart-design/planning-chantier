@@ -212,3 +212,10 @@ input[type=color]{width:36px;height:28px;border:1px solid var(--line);border-rad
   .cell,.rh{min-height:40px}
   .chip{break-inside:avoid}
 }
+
+/* N° de chantier */
+.num{display:inline-block;font-weight:700;font-variant-numeric:tabular-nums;background:var(--ink);color:#fff;border-radius:4px;padding:0 5px;margin-right:5px;font-size:.88em;line-height:1.45;vertical-align:1px}
+.chip .num{background:var(--c);font-size:.9em}
+.grid.compact .chip .num{margin-right:2px}
+.num-row{grid-template-columns:150px 1fr}
+@media (max-width:480px){.num-row{grid-template-columns:1fr}}

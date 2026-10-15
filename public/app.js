@@ -80,6 +80,8 @@ function normalize(d) {
 const D = () => Store.data;
 const techById = id => D().techs.find(t => t.id === id);
 const siteById = id => D().sites.find(s => s.id === id);
+const numTag = s => (s?.number ? `<span class="num">${esc(s.number)}</span>` : '');
+const siteLabel = s => (s ? (s.number ? s.number + ' · ' : '') + s.name : '');
 const overlaps = (a, b) => a === 'day' || b === 'day' || a === b;
 const bySlot = (a, b) => SLOT_ORDER[a.slot] - SLOT_ORDER[b.slot];
 function hasConflict(list) {
@@ -248,8 +250,8 @@ function renderPlanning() {
   }
 
   const q = UI.filter.trim().toLowerCase();
-  const jobText = j => [j.task, j.notes, j.label, siteById(j.siteId)?.name, siteById(j.siteId)?.client, techById(j.techId)?.name].join(' ').toLowerCase();
-  const rowText = r => [r.name, r.role, r.client, r.address].join(' ').toLowerCase();
+  const jobText = j => [j.task, j.notes, j.label, siteById(j.siteId)?.name, siteById(j.siteId)?.number, siteById(j.siteId)?.client, techById(j.techId)?.name].join(' ').toLowerCase();
+  const rowText = r => [r.name, r.number, r.role, r.client, r.address].join(' ').toLowerCase();
   const rowMatch = new Set();
   if (q) {
     rows = rows.filter(r => {
@@ -291,7 +293,7 @@ function renderPlanning() {
     }
     manDays += load;
     h += `<div class="rh" data-edit="${isTech ? 'tech' : 'site'}" data-id="${r.id}" style="--c:${esc(r.color)}" title="Modifier">
-      <i class="dot"></i><div><b>${esc(r.name)}</b><small>${esc((isTech ? r.role : r.client) || '')}</small></div>
+      <i class="dot"></i><div><b>${isTech ? '' : numTag(r)}${esc(r.name)}</b><small>${esc((isTech ? r.role : r.client) || '')}</small></div>
       <span class="load" title="Jours planifiés sur la période">${fmtNum(load)} j</span></div>${cells}`;
   }
   h += '</div></div>';
@@ -307,11 +309,11 @@ function chipHTML(j, isTech, clash, dim) {
   const abs = j.kind === 'absence';
   const color = abs ? '#9AA0A6' : isTech ? (site?.color || '#999') : (tech?.color || '#999');
   const title = abs ? (j.label || 'Absence') : isTech ? (site?.name || 'Chantier supprimé') : (tech?.name || 'Technicien supprimé');
-  const tip = [abs ? `${tech?.name || '?'} — ${j.label || 'Absence'}` : `${site?.name || '?'} — ${tech?.name || '?'}`,
+  const tip = [abs ? `${tech?.name || '?'} — ${j.label || 'Absence'}` : `${siteLabel(site) || '?'} — ${tech?.name || '?'}`,
     SLOTS[j.slot], j.task, abs ? '' : STATUS[j.status], j.notes, clash ? '⚠ Conflit pour ce technicien' : ''].filter(Boolean).join('\n');
   const cls = ['chip', abs && 'abs', 'st-' + (j.status || 'prevu'), clash && 'clash', dim && 'dim'].filter(Boolean).join(' ');
   return `<div class="${cls}" draggable="true" data-job="${j.id}" style="--c:${esc(color)}" title="${esc(tip)}">`
-    + `<span class="ct">${j.status === 'fait' && !abs ? '✓ ' : ''}${esc(title)}</span>`
+    + `<span class="ct">${j.status === 'fait' && !abs ? '✓ ' : ''}${isTech && !abs ? numTag(site) : ''}${esc(title)}</span>`
     + (j.slot !== 'day' ? `<span class="slot">${SLOT_SHORT[j.slot]}</span>` : '')
     + (j.task ? `<span class="cs">${esc(j.task)}</span>` : '')
     + '</div>';
@@ -334,7 +336,7 @@ function renderResources() {
     const js = D().jobs.filter(j => j.siteId === s.id && j.kind !== 'absence').map(j => j.date).sort();
     const range = js.length ? (js[0] === js[js.length - 1] ? fmtShort(js[0]) : `${fmtShort(js[0])} → ${fmtShort(js[js.length - 1])}`) : 'Non planifié';
     return `<li data-edit="site" data-id="${s.id}" class="${s.status === 'termine' ? 'off' : ''}" style="--c:${esc(s.color)}">
-      <i class="dot"></i><div><b>${esc(s.name)}${s.status === 'termine' ? '<span class="tag">terminé</span>' : ''}</b>
+      <i class="dot"></i><div><b>${numTag(s)}${esc(s.name)}${s.status === 'termine' ? '<span class="tag">terminé</span>' : ''}</b>
       <small>${esc([s.client, s.address].filter(Boolean).join(' · ') || '—')}</small></div>
       <span class="meta">${esc(range)}<br>${js.length} interv.</span></li>`;
   };
@@ -397,7 +399,7 @@ function meCard(j) {
   const maps = s.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(s.address)}` : '';
   const st = j.status || 'prevu';
   return `<article class="job" style="--c:${esc(s.color)}">
-    <div class="jt"><h4>${esc(s.name)}</h4><span class="badge ${st}">${SLOTS[j.slot]} · ${STATUS[st]}</span></div>
+    <div class="jt"><h4>${numTag(s)}${esc(s.name)}</h4><span class="badge ${st}">${SLOTS[j.slot]} · ${STATUS[st]}</span></div>
     ${j.task ? `<p><b>${esc(j.task)}</b></p>` : ''}
     ${s.client ? `<p class="small">Client : ${esc(s.client)}</p>` : ''}
     ${s.address ? `<p>📍 <a href="${maps}" target="_blank" rel="noopener">${esc(s.address)}</a></p>` : ''}
@@ -505,7 +507,7 @@ function openJob(id, preset = {}) {
     </div>
     <div class="field only-site"><label for="f-site">Chantier</label>
       <select id="f-site"><option value="">— Choisir un chantier —</option>
-        ${sites.map(s => `<option value="${s.id}" ${s.id === j.siteId ? 'selected' : ''}>${esc(s.name)}${s.client ? ' · ' + esc(s.client) : ''}${s.status === 'termine' ? ' (terminé)' : ''}</option>`).join('')}
+        ${sites.map(s => `<option value="${s.id}" ${s.id === j.siteId ? 'selected' : ''}>${esc(siteLabel(s))}${s.client ? ' · ' + esc(s.client) : ''}${s.status === 'termine' ? ' (terminé)' : ''}</option>`).join('')}
         <option value="__new">+ Nouveau chantier…</option></select>
       <input type="text" id="f-newsite" placeholder="Nom du nouveau chantier" hidden></div>
     <div class="field only-abs"><label for="f-label">Motif</label>
@@ -577,7 +579,7 @@ function openJob(id, preset = {}) {
     });
     Store.commit(d => {
       if (v.kind === 'site' && v.newSite && !d.sites.some(s => s.id === newSiteId))
-        d.sites.push({ id: newSiteId, name: v.newSite, client: '', address: '', contact: '', phone: '', notes: '', color: nextColor(d), status: 'actif' });
+        d.sites.push({ id: newSiteId, number: '', name: v.newSite, client: '', address: '', contact: '', phone: '', notes: '', color: nextColor(d), status: 'actif' });
       if (isNew) {
         for (const t of v.techIds) for (const date of v.dates) d.jobs.push({ id: uid(), techId: t, ...fields(date) });
       } else {
@@ -669,7 +671,7 @@ function openTech(id) {
 /* --- Chantier --- */
 function openSite(id) {
   const ex = id ? siteById(id) : null;
-  const s = ex ? { ...ex } : { name: '', client: '', address: '', contact: '', phone: '', notes: '', color: nextColor(D()), status: 'actif' };
+  const s = ex ? { ...ex } : { number: '', name: '', client: '', address: '', contact: '', phone: '', notes: '', color: nextColor(D()), status: 'actif' };
   const buttons = [];
   if (ex) buttons.push({
     label: 'Supprimer', cls: 'danger', action: async () => {
@@ -682,7 +684,7 @@ function openSite(id) {
   buttons.push({ label: 'Annuler', cls: 'ghost' }, {
     label: ex ? 'Enregistrer' : 'Ajouter', cls: 'primary', submit: true, action: f => {
       const v = {
-        name: val(f, 'f-name'), client: val(f, 'f-client'), address: val(f, 'f-address'), contact: val(f, 'f-contact'),
+        number: val(f, 'f-number'), name: val(f, 'f-name'), client: val(f, 'f-client'), address: val(f, 'f-address'), contact: val(f, 'f-contact'),
         phone: val(f, 'f-phone'), notes: val(f, 'f-notes'), color: $('#f-color', f).value, status: val(f, 'f-status'),
       };
       if (!v.name) { const w = $('#f-warn', f); w.hidden = false; w.textContent = 'Le nom du chantier est obligatoire.'; return false; }
@@ -696,7 +698,8 @@ function openSite(id) {
   });
   openModal({
     title: ex ? 'Chantier' : 'Nouveau chantier', buttons,
-    body: `<div class="field"><label for="f-name">Nom du chantier</label><input type="text" id="f-name" value="${esc(s.name)}" autofocus></div>
+    body: `<div class="row2 num-row"><div class="field"><label for="f-number">N° de chantier</label><input type="text" id="f-number" value="${esc(s.number || '')}" placeholder="ex. 2026-118" autofocus></div>
+        <div class="field"><label for="f-name">Nom du chantier</label><input type="text" id="f-name" value="${esc(s.name)}"></div></div>
       <div class="row2"><div class="field"><label for="f-client">Client</label><input type="text" id="f-client" value="${esc(s.client)}"></div>
         <div class="field"><label for="f-status">Statut</label><select id="f-status"><option value="actif">En cours</option><option value="termine" ${s.status === 'termine' ? 'selected' : ''}>Terminé</option></select></div></div>
       <div class="field"><label for="f-address">Adresse</label><input type="text" id="f-address" value="${esc(s.address)}" placeholder="Utilisée pour le lien GPS des techniciens"></div>
@@ -736,13 +739,13 @@ function download(name, content, type) {
 
 function exportCSV() {
   const days = new Set(visibleDays());
-  const rows = [['Date', 'Jour', 'Technicien', 'Type', 'Chantier / Motif', 'Client', 'Adresse', 'Créneau', 'Tâche', 'Statut', 'Notes']];
+  const rows = [['Date', 'Jour', 'Technicien', 'Type', 'N° chantier', 'Chantier / Motif', 'Client', 'Adresse', 'Créneau', 'Tâche', 'Statut', 'Notes']];
   D().jobs.filter(j => days.has(j.date))
     .sort((a, b) => a.date.localeCompare(b.date) || cmp(techById(a.techId)?.name, techById(b.techId)?.name) || bySlot(a, b))
     .forEach(j => {
       const s = siteById(j.siteId) || {}, abs = j.kind === 'absence';
       rows.push([fmt(j.date, { day: '2-digit', month: '2-digit', year: 'numeric' }), DAY_SHORT[dow(j.date)], techById(j.techId)?.name || '',
-        abs ? 'Absence' : 'Chantier', abs ? j.label : s.name, abs ? '' : s.client, abs ? '' : s.address, SLOTS[j.slot], j.task || '', abs ? '' : STATUS[j.status], j.notes || '']);
+        abs ? 'Absence' : 'Chantier', abs ? '' : s.number || '', abs ? j.label : s.name, abs ? '' : s.client, abs ? '' : s.address, SLOTS[j.slot], j.task || '', abs ? '' : STATUS[j.status], j.notes || '']);
     });
   const csv = '﻿' + rows.map(r => r.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(';')).join('\r\n');
   const ds = [...days];
@@ -756,7 +759,7 @@ function loadDemo() {
       .map(([name, role], i) => ({ id: uid(), name, role, phone: '06 00 00 00 0' + i, color: PALETTE[(i + 6) % PALETTE.length], active: true }));
     const S = [['Résidence Les Tilleuls', 'Bati Ouest', '12 rue des Tilleuls, 35000 Rennes'], ['Lycée – rénovation électrique', 'Région Bretagne', 'Avenue Georges Graff, 35200 Rennes'],
       ['Entrepôt logistique ZA Nord', 'LogiBreizh', 'ZA Nord, 35760 Saint-Grégoire'], ['Clinique – mise à niveau SSI', 'Clinique Saint-Laurent', 'Rennes'], ['Bureaux – câblage VDI', 'Immo Cesson', '35510 Cesson-Sévigné']]
-      .map(([name, client, address], i) => ({ id: uid(), name, client, address, contact: '', phone: '', notes: '', color: PALETTE[i], status: 'actif' }));
+      .map(([name, client, address], i) => ({ id: uid(), number: `2026-${String(101 + i * 7)}`, name, client, address, contact: '', phone: '', notes: '', color: PALETTE[i], status: 'actif' }));
     const add = (t, s, day, slot = 'day', task = '') => {
       const date = addDays(mon, day);
       d.jobs.push({ id: uid(), kind: 'site', techId: T[t].id, siteId: S[s].id, date, slot, task, notes: '', label: '', status: date < today ? 'fait' : date === today ? 'encours' : 'prevu' });
