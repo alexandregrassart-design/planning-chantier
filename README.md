@@ -13,6 +13,7 @@ Planning des techniciens sur les chantiers : une application web à déployer su
 - **Glisser-déposer** pour déplacer une intervention (Ctrl + glisser pour la copier)
 - **Jours fériés français** affichés, Pâques et Pentecôte compris
 - **Mon planning** : vue mobile pour chaque technicien, avec le lien GPS vers le chantier, le contact sur site, les collègues présents et les boutons « En cours » / « Terminé ». Le lien direct se partage avec `?tech=…`
+- **Export semaine** : une feuille de route par technicien (une page A4 avec le logo, les chantiers jour par jour, les contacts et les consignes), à imprimer ou enregistrer en PDF, ou en version texte à coller dans un SMS, WhatsApp ou un e-mail. Par défaut, la semaine suivante est proposée à partir du jeudi.
 - **Export CSV** pour Excel, **impression** en A4 paysage, **sauvegarde et import** au format JSON
 - **Synchronisation** entre tous les postes toutes les 15 s. Si deux personnes modifient le planning en même temps, aucune modification n'est perdue.
 

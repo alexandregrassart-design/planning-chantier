@@ -571,6 +571,7 @@ function renderMe() {
     <div class="me-head">
       <select id="me-tech" aria-label="Technicien">${(() => { const opt = t => `<option value="${t.id}" ${t.id === tech.id ? 'selected' : ''}>${esc(t.name)}</option>`; return hasCats() ? groupTechs(techs).map(g => `<optgroup label="${esc(catName(g.cat))}">${g.techs.map(opt).join('')}</optgroup>`).join('') : techs.map(opt).join(''); })()}</select>
       <select id="me-span" aria-label="Période">${[7, 14, 30].map(n => `<option value="${n}" ${n === UI.meSpan ? 'selected' : ''}>${n} jours</option>`).join('')}</select>
+      <button class="btn" data-act="export-me" title="Feuille de route de la semaine (PDF ou texte)">Exporter la semaine</button>
       <button class="btn" data-act="copy-link" title="Lien direct vers le planning de ce technicien">Copier le lien</button>
     </div>${body}</div>`;
 }
@@ -1065,7 +1066,7 @@ function loadDemo() {
 }
 
 async function handleAct(act, el) {
-  if (RO() && act !== 'copy-link') return;
+  if (RO() && act !== 'copy-link' && act !== 'export-me') return;
   switch (act) {
     case 'add-tech': return openTech();
     case 'add-site': return openSite();
@@ -1097,6 +1098,7 @@ async function handleAct(act, el) {
       Store.commit(d => { const x = d.jobs.find(j => j.id === job); if (x) { x.status = status; x.updatedAt = Date.now(); } });
       return;
     }
+    case 'export-me': return openWeekExport({ techIds: [UI.meTech] });
     case 'copy-link': {
       const url = `${location.origin}${location.pathname}?tech=${encodeURIComponent(UI.meTech)}`;
       try { await navigator.clipboard.writeText(url); toast('Lien copié : à envoyer au technicien'); }
@@ -1136,6 +1138,7 @@ function bindEvents() {
   $('#weekend').onchange = e => { UI.weekend = e.target.checked; render(); };
   $('#filter').oninput = e => { UI.filter = e.target.value; render(); };
   $('#csv').onclick = exportCSV;
+  $('#export-week').onclick = () => openWeekExport({ techIds: UI.cat ? D().techs.filter(t => t.active !== false && techInCat(t.id)).map(t => t.id) : [] });
   $('#print').onclick = () => window.print();
   $('#add').onclick = () => openJob(null, {});
   $('#fab').onclick = () => openJob(null, isMobile() && (UI.view === 'tech' || UI.view === 'site') ? { date: UI.day } : {});

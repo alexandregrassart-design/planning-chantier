@@ -357,3 +357,49 @@ input[type=color]{width:36px;height:28px;border:1px solid var(--line);border-rad
 .m-grp .ord button{width:34px;height:28px;font-size:11px}
 .card-hint{margin:0;padding:8px 16px 12px;color:var(--muted);font-size:12px}
 @media print{.ord{display:none}}
+
+/* ---------- Export semaine : feuilles de route ---------- */
+.linkbtns{font-weight:400;margin-left:6px;color:var(--muted)}
+.linkbtn{border:0;background:none;padding:0;color:#1f7f8c;cursor:pointer;font-size:12px}
+.linkbtn:hover{text-decoration:underline}
+#sheets{display:none}
+@media (max-width:760px){#export-week{display:none}}
+@media print{
+  @page sheet{size:A4 portrait;margin:12mm}
+  body.print-sheets > *:not(#sheets){display:none!important}
+  body.print-sheets #sheets{display:block}
+  body.print-sheets{padding:0;background:#fff}
+}
+.sheet{page:sheet;break-after:page;font-size:11.5px;color:#1C1313;font-family:"Soleil",system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif}
+.sheet:last-child{break-after:auto}
+.sheet header{display:flex;align-items:center;gap:16px;border-bottom:3px solid #E73A2C;padding-bottom:10px;margin-bottom:8px}
+.sheet header img{height:24px}
+.sheet .t{flex:1}
+.sheet h1{font-size:18px;margin:0}
+.sheet .t p{margin:2px 0 0;color:#5d4f4c;font-size:12.5px}
+.sheet .who{text-align:right}
+.sheet .who b{display:block;font-size:16px}
+.sheet .who span{color:#8A7A77;font-size:11.5px}
+.sheet .meta{margin:0 0 10px;color:#8A7A77}
+.sheet table{width:100%;border-collapse:collapse}
+.sheet th{text-align:left;font-size:9.5px;text-transform:uppercase;letter-spacing:.05em;color:#8A7A77;border-bottom:1.5px solid #cfc4c2;padding:5px 6px}
+.sheet td{border-bottom:1px solid #e7dedc;padding:7px 6px;vertical-align:top}
+.sheet td b{font-weight:600}
+.sheet td small{display:block;color:#5d4f4c;font-size:10.5px;margin-top:2px}
+.sheet td.d{width:84px;border-right:1px solid #e7dedc;background:#FAF8F7}
+.sheet td.d b{display:block;font-weight:700}
+.sheet td.d span{color:#8A7A77}
+.sheet td.d em{display:block;color:#E73A2C;font-style:normal;font-size:9.5px;margin-top:2px}
+.sheet td.slot{width:68px;white-space:nowrap;color:#5d4f4c}
+.sheet .n{display:inline-block;background:#1C1313;color:#fff;border-radius:3px;padding:0 4px;font-size:9.5px;font-weight:700;margin-right:5px;vertical-align:1px}
+.sheet tr.free td:not(.d){color:#8A7A77;font-style:italic}
+.sheet tr.abs td:not(.d){background:repeating-linear-gradient(-45deg,#f1f2f3 0 6px,#fff 6px 12px)}
+.sheet tr{break-inside:avoid}
+.sheet footer{margin-top:14px;font-size:9.5px;color:#8A7A77;border-top:1px solid #e7dedc;padding-top:6px}
+.sheet table{table-layout:fixed}
+.sheet th:nth-child(1){width:12%}
+.sheet th:nth-child(2){width:11%}
+.sheet th:nth-child(3){width:33%}
+.sheet th:nth-child(4){width:26%}
+.sheet th:nth-child(5){width:18%}
+.sheet td.d,.sheet td.slot{width:auto}

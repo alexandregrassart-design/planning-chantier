@@ -45,6 +45,7 @@
     </select>
     <label class="chk"><input type="checkbox" id="weekend"> Week-end</label>
     <input type="search" id="filter" placeholder="Filtrer…" aria-label="Filtrer">
+    <button class="btn" id="export-week" title="Feuille de route de la semaine pour chaque technicien (PDF ou texte)">Export semaine</button>
     <button class="btn ghost" id="csv" title="Exporter la période en CSV (Excel)">CSV</button>
     <button class="btn ghost" id="print">Imprimer</button>
     <button class="btn primary" id="add">+ Intervention</button>
@@ -56,7 +57,9 @@
 
 <input type="file" id="import-file" accept="application/json,.json" hidden>
 <div id="modal-root"></div>
+<div id="sheets"></div>
 <div id="toasts"></div>
 <script src="app.js"></script>
+<script src="export.js"></script>
 </body>
 </html>
